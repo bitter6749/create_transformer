@@ -1,7 +1,217 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+
+// 設定
+#define VOCAB_SIZE 27 // a~z + space
+#define SEQ_LEN    4  // 入力する文字数(例: "cat " の四文字)
+#define EMBED_DIM  16  // 文字を表現するベクトルの次元数 (RNN の HIDDENに相当)
+
+typedef struct {
+  float *token_embedding; // 文字をベクトルに変換する表 [VOCAB_SIZE x EMBED_DIM]
+  // 【token_embedding [27 × 16] の中身のイメージ】
+  // [ 0 〜 15マス目 ] : ID=0 ('a') を表す 16個の数字
+  // [16 〜 31マス目 ] : ID=1 ('b') を表す 16個の数字
+  // [32 〜 47マス目 ] : ID=2 ('c') を表す 16個の数字
+  // ...
+  // [416〜431マス目 ] : ID=26 (' ') を表す 16個の数字
+  // ID=1 の 3マス目: 1 * 16 + 2
+  // 一般化すると、 ID * EMBED_DIM + index
+
+  // Attention (注意機構) 用の重み (Q, K, V) という3つの役割の行列
+  float *W_q; // [EMBED_DIM x EMBED_DIM]
+  float *W_k; // [EMBED_DIM x EMBED_DIM]
+  float *W_v; // [EMBED_DIM x EMBED_DIM]
+
+  // 出力層の重み
+  float *W_out;   // ベクトルから文字の確立に戻す行列 [VOCAB_SIZE x EMBED_DIM]
+} SimpleTransformer;
+
+// プロトタイプ宣言
+void forward_transformer(SimpleTransformer *model, const int *input_ids, float *output_probabilties);
+void softmax(float *x, int size);
 
 int main() {
-  printf("Hello, world\n");
+  // 1. モデルの宣言とメモリ確保
+  SimpleTransformer model;
+  model.token_embedding = (float *)malloc(VOCAB_SIZE * EMBED_DIM * sizeof(float));
+  model.W_q = (float *)malloc(EMBED_DIM * EMBED_DIM * sizeof(float));
+  model.W_k = (float *)malloc(EMBED_DIM * EMBED_DIM * sizeof(float));
+  model.W_v = (float *)malloc(EMBED_DIM * EMBED_DIM * sizeof(float));
+  model.W_out = (float *)malloc(VOCAB_SIZE * EMBED_DIM * sizeof(float));
+
+  // すべての値に適当初期値を入れる
+  for (int i=0; i < VOCAB_SIZE * EMBED_DIM; i++) model.token_embedding[i] = 0.1f;
+  for (int i=0; i < EMBED_DIM * EMBED_DIM; i++) {
+    model.W_q[i] = 0.5f;
+    model.W_k[i] = 0.5f;
+    model.W_v[i] = 0.5f;
+  }
+  for (int i=0; i < VOCAB_SIZE * EMBED_DIM; i++) model.W_out[i] = 0.1f;
+
+  // 2. 入力データ ("cat " を表すIDの配列)
+  // c=2, a=0, t=19, space=26
+  int input_ids[SEQ_LEN] = {2, 0, 19, 26};
+
+  // 次の一文字の予測確率 (27文字分) を受け取るバッファ
+  float *output_probabilties = (float *)calloc(VOCAB_SIZE, sizeof(float));
+
+  // 3. 予測の実行
+  printf("Transformerで次の文字を予測中...\n");
+  forward_transformer(&model, input_ids, output_probabilties);
+
+  // 4. 結果の表示 (最も確率が高い文字のIDを探す)
+  int max_id = 0;
+  float max_prob = output_probabilties[0];
+  for (int i = 1; i < VOCAB_SIZE; i++) {
+    if (output_probabilties[i] > max_prob) {
+      max_prob = output_probabilties[i];
+      max_id = i;
+    }
+  }
+  printf("予測された次の文字のID: %d (確率: %.2f%%)\n", max_id, max_prob * 100.0f);
+
+  // メモリの開放
+  free(model.token_embedding); 
+  free(model.W_q);
+  free(model.W_k);
+  free(model.W_v);
+  free(model.W_out);
+  free(output_probabilties);
 
   return 0;
+}
+
+void forward_transformer(SimpleTransformer *model, const int *input_ids, float *output_probabilties) {
+  // 一時的なワークスペース (ヒープに確保)
+  // X: 入力文字をベクトル化したもの [SEQ_LEN x EMBED_DIM]
+  //
+  //      { x0,0 x0,1 ... x0,15 }  <- 一文字目 'c' のベクトル
+  //      { x1,0 x1,1 ... x1,15 }  <- 二文字目 'a' のベクトル
+  // X =  |                     |
+  //      { x2,0 x2,1 ... x2,15 }  <- 三文字目 't' のベクトル
+  //      { x3,0 x3,1 ... x3,15 }  <- 四文字目 ' ' のベクトル
+  float *X = (float *)malloc(SEQ_LEN * EMBED_DIM * sizeof(float));
+
+  // Q, K, V ベクトル
+  // Q: クエリ
+  // K: キュー
+  // V: バリュー
+  float *Q = (float *)malloc(SEQ_LEN * EMBED_DIM * sizeof(float));
+  float *K = (float *)malloc(SEQ_LEN * EMBED_DIM * sizeof(float));
+  float *V = (float *)malloc(SEQ_LEN * EMBED_DIM * sizeof(float));
+
+  // step1: Embedding (文字IDをベクトルに変換)
+  for (int t = 0; t < SEQ_LEN; t++) {
+    int id = input_ids[t];
+    for (int d = 0; d < EMBED_DIM; d++) {
+      X[t * EMBED_DIM + d] = model->token_embedding[id * EMBED_DIM + d];
+    }
+  }
+
+  // step2: Q, K, V の計算 (行列の掛け算)
+  for (int t = 0; t < SEQ_LEN; t++) {
+    for (int i = 0; i < EMBED_DIM; i++) {
+      float q_val = 0.0f, k_val = 0.0f, v_val = 0.0f;
+
+      for (int j = 0; j < EMBED_DIM; j++) {
+        float x = X[t * EMBED_DIM + j];
+        q_val += x * model->W_q[i * EMBED_DIM + j];
+        k_val += x * model->W_k[i * EMBED_DIM + j];
+        v_val += x * model->W_v[i * EMBED_DIM + j];
+      }
+      Q[t * EMBED_DIM + i] = q_val;
+      K[t * EMBED_DIM + i] = k_val;
+      V[t * EMBED_DIM + i] = v_val;
+    }
+  }
+
+  // step3: Attention (注意機構) の計算
+  //
+  //        { A0,0 A0,1 A0,2 A0,3 } <- 'c' から見た各文字への注目度
+  //        { A1,0 A1,1 A1,2 A1,3 } <- 'a' から見た各文字への注目度
+  //  A =   |                     |
+  //        { A2,0 A2,1 A2,2 A2,3 } <- 't' から見た各文字への注目度
+  //        { A3,0 A3,1 A3,2 A3,3 } <- ' ' から見た各文字への注目度
+  //
+  float A_scores[SEQ_LEN * SEQ_LEN] = {0};
+  for (int i = 0; i < SEQ_LEN; i++) {
+    for (int j = 0; j < SEQ_LEN; j++) {
+      float score = 0.0f;
+      for (int d = 0; d < EMBED_DIM; d++) {
+        // Q, K は4行16列の行列
+        // score は 4行4列
+        // 4行16列 x 16行4列 = 4行4列 
+        // score = Q ・ K^T (K の転置行列)
+        // K はd行j列目とかけたいが、配列だとj行d列目と同じになる
+         score += Q[i * EMBED_DIM + d] * K[j * EMBED_DIM + d]; // Q と K の内積
+      }
+      A_scores[i * SEQ_LEN + j] = score / sqrtf(EMBED_DIM); // スケール調整
+    }
+    // softmaxをかけて確率 (重み) にする
+    softmax(&A_scores[i * SEQ_LEN], SEQ_LEN);
+  }
+
+  // 計算した関係性 (A_scores) を使って、V (価値)のベクトルをブレンドする
+  // Z: Attention の出力 [SEQ_LEN x EMBED_DIM]
+  //
+  //  4行16列 = 4行4列 x 4行16列 
+  //  Z = A ・ V
+  //
+  float *Z = (float *)calloc(SEQ_LEN * EMBED_DIM, sizeof(float));
+  for (int i = 0; i < SEQ_LEN; i++) {
+    for (int d = 0; d < EMBED_DIM; d++) {
+      for (int j = 0; j < SEQ_LEN; j++) {
+        float a = A_scores[i * SEQ_LEN + j];
+        float v = V[j * EMBED_DIM + d];
+        Z[i * EMBED_DIM + d] += a * v;
+      }
+    }
+  }
+
+  // step4: 出力層 (最後の文字の予想結果だけを使う)
+  // 今回は「最後の文字 (t = SEQ_LEN - 1)」の次の文字を予測したいので、Zの最後の行だけを計算
+  //
+  // 1行27列 = 1行16列 x 16列27行
+  // output = Z ・ W_out^T (W_out の転置行列)
+  //
+  // 全結合層
+  float *last_z = &Z[(SEQ_LEN - 1) * EMBED_DIM];
+  for (int i = 0; i < VOCAB_SIZE; i++) {
+    float val = 0.0f;
+    for (int d = 0; d < EMBED_DIM; d++) {
+      float z = last_z[d];
+      float w = model->W_out[i * EMBED_DIM + d];
+      val += z * w;
+    }
+
+    output_probabilties[i] = val;
+  }
+  softmax(output_probabilties, VOCAB_SIZE); // 最終的な文字の確立分布にする
+
+
+  // ワークスペースの解放
+  free(X);
+  free(Q);
+  free(K);
+  free(V);
+  free(Z);
+}
+
+// ソフトマックス関数
+void softmax(float *x, int size) {
+  float max_val = x[0];
+  for (int i = 1; i < size; i++) {
+    if (x[i] > max_val) max_val = x[i];
+  }
+
+  float sum = 0.0f;
+  for (int i = 0; i < size; i++) {
+    x[i] = expf(x[i] - max_val);
+    sum += x[i];
+  }
+  for (int i = 0; i < size; i++) {
+    x[i] /= sum;
+  }
+
 }
