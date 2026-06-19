@@ -228,7 +228,7 @@ void softmax(float *x, int size) {
 
 }
 
-// 逆伝播関数
+// 出力層の逆伝播関数
 void backward_ouput(
   SimpleTransformer *model, 
   const float *output_probabilities, // 順伝播の出力 [VOCAB_SIZE]
