@@ -28,7 +28,19 @@ typedef struct {
 } SimpleTransformer;
 
 // プロトタイプ宣言
-void forward_transformer(SimpleTransformer *model, const int *input_ids, float *output_probabilties);
+void forward_transformer(
+  SimpleTransformer *model, 
+  const int *input_ids, 
+  float *output_probabilties
+);
+void backward_ouput(
+  SimpleTransformer *model, 
+  const float *output_probabilities, 
+  int target_id, 
+  const float *Z, 
+  float *dW_out, 
+  float*dZ
+);
 void softmax(float *x, int size);
 
 int main() {
@@ -214,4 +226,39 @@ void softmax(float *x, int size) {
     x[i] /= sum;
   }
 
+}
+
+// 逆伝播関数
+void backward_ouput(
+  SimpleTransformer *model, 
+  const float *output_probabilities, // 順伝播の出力 [VOCAB_SIZE]
+  int target_id,                     // 正解の文字ID
+  const float *Z,                    // 順伝播の途中の行列 [SEQ_LEN x EMBED_DIM]
+  float *dW_out,                     // W_out の勾配 [VOCAB_SIZE x EMBED_DIM]
+  float*dZ                           // Zへの誤差の逆流 [SEQ_LEN x EMBED_DIM]
+) {
+  // 1. 生スコアの誤差を計算
+  float d_logits[VOCAB_SIZE];
+  for (int i = 0; i < VOCAB_SIZE; i++) {
+    d_logits[i] = output_probabilities[i];
+  }
+  d_logits[target_id] -= 1.0f;
+
+  // 2. W_out の修正メーターを計算
+  const float *last_z = &Z[(SEQ_LEN - 1) * EMBED_DIM];  // 4文字目のベクトルを指す
+
+  for (int i = 0; i < VOCAB_SIZE; i++) {
+    for (int d = 0; d < EMBED_DIM; d++) {
+      // 誤差 x 通ってきた値 (last_z) を勾配に蓄積
+      dW_out[i * EMBED_DIM + d] += d_logits[i] * last_z[d];
+    }
+  }
+
+  // 3. 行列 Z の最後の行 (4行目) への誤差を計算して、上流へ引き継ぐ
+  float *dz_last = &dZ[(SEQ_LEN - 1) * EMBED_DIM];
+  for (int i = 0; i < VOCAB_SIZE; i++) {
+    for (int d = 0; d < EMBED_DIM; d++) {
+      dz_last[d] += d_logits[i] * model->W_out[i * EMBED_DIM + d];
+    }
+  }
 }
