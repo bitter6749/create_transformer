@@ -284,6 +284,7 @@ void backward_attention(
   float *dA,
   float *dV
 ) {
+  // dA = dZ ・ V^T の計算
   for (int i = 0; i < SEQ_LEN; i++) {
     for (int j = 0; j < SEQ_LEN; j++) {
       float sum = 0.0f;
@@ -293,6 +294,7 @@ void backward_attention(
     }
   }
 
+  // dV = A^T ・ dZ の計算
   for (int i = 0; i < SEQ_LEN; i++) {
     for (int d = 0; d < EMBED_DIM; d++) {
       float sum = 0.0f;
