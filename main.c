@@ -41,6 +41,13 @@ void backward_ouput(
   float *dW_out, 
   float*dZ
 );
+void backward_attention(
+  const float *dZ,
+  const float *A_scores,
+  const float *V,
+  float *dA,
+  float *dV
+);
 void softmax(float *x, int size);
 
 int main() {
@@ -259,6 +266,41 @@ void backward_ouput(
   for (int i = 0; i < VOCAB_SIZE; i++) {
     for (int d = 0; d < EMBED_DIM; d++) {
       dz_last[d] += d_logits[i] * model->W_out[i * EMBED_DIM + d];
+    }
+  }
+}
+
+// 相性表の誤差dA
+// dA = dZ ・ V^T (Vの転置行列)
+// [4 x 4] = [4 x 16] x [16 x 4]
+//
+// 価値の誤差dV
+// dV = A^T (Aの転置行列) ・ dZ
+// [4 x 16] = [4 x 4] x [4 x 16]
+void backward_attention(
+  const float *dZ,
+  const float *A_scores,
+  const float *V,
+  float *dA,
+  float *dV
+) {
+  for (int i = 0; i < SEQ_LEN; i++) {
+    for (int j = 0; j < SEQ_LEN; j++) {
+      float sum = 0.0f;
+      for (int d = 0; d < EMBED_DIM; d++) {
+        sum += dZ[i * EMBED_DIM + d] * V[j * EMBED_DIM + d];
+      }
+    }
+  }
+
+  for (int i = 0; i < SEQ_LEN; i++) {
+    for (int d = 0; d < EMBED_DIM; d++) {
+      float sum = 0.0f;
+      for (int j = 0; j < SEQ_LEN; j++) {
+        sum += A_scores[j * SEQ_LEN + i] * dZ[j * EMBED_DIM + d];
+      }
+
+      dV[i * EMBED_DIM + d]  = sum;
     }
   }
 }
