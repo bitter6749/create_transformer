@@ -89,12 +89,10 @@ void forward_transformer(
 
   // 今回は「最後の文字 (i = SEQ_LEN - 1)」の次の文字を予測したいので、Zの最後の行だけを計算
   // 1行27列 = 1行16列 x 16列27行
-  // Output_Linear = last_Z ・ W_out
+  // Output_Linear = last_z ・ W_out
   Matrix last_z = create_matrix(1, EMBED_DIM);
-  for (int i = 0; i < EMBED_DIM; i++) {
-    last_z.data[i] = Z.data[(SEQ_LEN - 1) * EMBED_DIM + i];
-  }
-
+  extract_row(&Z, SEQ_LEN - 1, &last_z);
+  
   // Output_Linear = last_z ・ W_out
   mat_mul(&last_z, &model->W_out, &Output_Liner);
 

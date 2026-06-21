@@ -26,6 +26,15 @@ void forward_embedding(
   }
 }
 
+// 行列 src の指定された 行 row のデータを 1行の行列 dest にコピーする
+void extract_row(const Matrix *src, int row, Matrix *dest) {
+  int cols = src->cols;
+
+  for (int j = 0; j < cols; j++) {
+    dest->data[j] = src->data[row * cols + j];
+  }
+}
+
 // 行列のすべての要素にスカラー(実数)を掛け算する
 void scale_matrix(Matrix *m, float scalar) {
   int total_elements = m->rows * m->cols;

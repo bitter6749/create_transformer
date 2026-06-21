@@ -13,6 +13,9 @@ void forward_embedding(
     Matrix *X
 );
 
+// 行列 src の指定された 行 row のデータを 1行の行列 dest にコピーする
+void extract_row(const Matrix *src, int row, Matrix *dest);
+
 // スケール
 void scale_matrix(Matrix *m, float scalar);
 
