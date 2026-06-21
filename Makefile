@@ -8,7 +8,7 @@ CFALGS = -Wall -Wextra -pedantic -Iinclude
 TARGET = bin/transformer
 
 # src/ フォルダにあるすべての .c ファイルを自動でリストアップ
-CRCS = $(wildcard src/*.c)
+SRCS = $(wildcard src/*.c)
 
 # リストアップした .c ファイルの名前を build/ 内の .oファイル名に自動変換する
 OBJS = $(patsubst src/%.c, build/%.o, $(SRCS))
@@ -16,7 +16,8 @@ OBJS = $(patsubst src/%.c, build/%.o, $(SRCS))
 
 # 最初にする命令
 # フォルダを作って、すべてコンパイルして、リンクする
-all: make_dirs $(OBJS) link_all
+# $(TARGET) を指定して、実行ファイルを作るための処理を Makefile に実行させる
+all: make_dirs $(TARGET)
 
 # 必要なフォルダを作成
 make_dirs:
@@ -26,19 +27,19 @@ make_dirs:
 # % はワイルドカード (任意の文字列) を意味する
 # $< はコンパイル対象の.cファイル
 # $@ は出力先の.oファイルを指す
-build/%.o: src/%.c
+build/%.o: src/%.c | make_dirs
 	$(CC) $(CFALGS) -c $< -o $@
 
 # 依存関係に $(OBJS)を指定したため
 # .oファイルのどれか一つでもタイムスタンプが新しくなった時だけ、リンク処理が走る
 $(TARGET): $(OBJS)
-	$(CC) (OBJS) -o $(TARGET) -lm
-	@echo ">>> 変更を検知したため、再リンクを実行しました: $(TARGET)"
+	$(CC) $(OBJS) -o $(TARGET) -lm
+	@echo ">>> A change was detected and the link was re-linked: $(TARGET)"
 
 # 生成されたビルド物や実行ファイルを削除するコマンド
 clean:
 	rm -rf build bin
-	@echo "--- クリーンアップが完了しました ---"
+	@echo "--- Cleanup completed ---"
 
 # クリーンな状態にしてビルドする
 re: clean all
