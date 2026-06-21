@@ -15,14 +15,15 @@ void init_model(SimpleTransformer *model) {
   model->W1 = create_matrix(EMBED_DIM, MLP_HIDDEN_DIM);
   model->b1 = create_matrix(1, MLP_HIDDEN_DIM);
   model->W2 = create_matrix(MLP_HIDDEN_DIM, EMBED_DIM);
-  model->b2 = create_matrix(1, MLP_HIDDEN_DIM);
+  model->b2 = create_matrix(1, EMBED_DIM);
 
   // 逆伝播用ワークスペース
   // H: 1層目の出力 [SEQ_LEN x MLP_HIDDEN_DIM]
   model->H = create_matrix(SEQ_LEN, MLP_HIDDEN_DIM);
 
-  // Output
-  model->W_out = create_matrix(VOCAB_SIZE, EMBED_DIM);
+  // Output (W_out): forward_lm_head 内の mat_mul(&last_z, W_out, ...)
+  // last_z が [1 x EMBED_DIM] なので、W_out は [EMBED_DIM x VOCAB_SIZE]
+  model->W_out = create_matrix(EMBED_DIM, VOCAB_SIZE);
 }
 
 void free_model(SimpleTransformer *model) {

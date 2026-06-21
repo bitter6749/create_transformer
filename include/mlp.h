@@ -1,6 +1,7 @@
 #ifndef MLP_H
 #define MLP_H
 
+#include "transformer.h"
 #include "matrix.h"
 
 // 隠れ層の次元数を設定 (EMBED_DIM の 4倍が一般的)

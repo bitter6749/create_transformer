@@ -1,7 +1,6 @@
 #ifndef OPS_H
 #define OPS_H
 
-#include "transformer.h"
 #include "matrix.h"
 
 // 埋め込み(Embedding)層
