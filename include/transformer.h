@@ -39,6 +39,16 @@ void backward_attention(
   Matrix *dV
 );
 
+// 逆伝播: Attention層のQ, K, V
+void backward_attention_qkv(
+    const Matrix *dA,
+    const Matrix *A_prob,
+    const Matrix *Q,
+    const Matrix *K,
+    Matrix *dQ,
+    Matrix *dK
+);
+
 // =================
 // === 活性化関数 ===
 // =================

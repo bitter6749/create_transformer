@@ -178,3 +178,57 @@ void softmax(float *x, int size) {
     x[i] /= sum;
   }
 }
+
+// 逆伝播: Attention層のQ, K, V
+void backward_attention_qkv(
+    const Matrix *dA,
+    const Matrix *A_prob,
+    const Matrix *Q,
+    const Matrix *K,
+    Matrix *dQ,
+    Matrix *dK
+) {
+    int seq_len = dA->rows;
+    int embed_dim = Q->cols;
+
+    // Softmax をかける前の生スコアへの誤差を入れるバッファ [seq_len x seq_len]
+    Matrix dS = create_matrix(seq_len, seq_len);
+
+    // =====================================================
+    // Step 1 & 2: Softmaxの微分 と スケール調整 (1 / sqrt(D))
+    // =====================================================
+    for (int i = 0; i < seq_len; i++) {
+        float sum_da_a = 0.0f;
+        // 1. 行ごとの内積 (dA ・ A_prob) を計算
+        for (int k = 0; k < seq_len; k++) {
+            int idx = i * seq_len + k;
+            sum_da_a += dA->data[idx] * A_prob->data[idx];
+        }
+
+        // 2. Softmax の微分公式を適用し、同時に√embed_dim で割る(スケール)
+        for (int j = 0; j < seq_len; j++) {
+            int idx = i * seq_len + j;
+            float ds_val = A_prob->data[idx] * (dA->data[idx] - sum_da_a);
+
+            // スケール調整の逆伝播
+            dS.data[idx] = ds_val / sqrtf(embed_dim);
+        }
+    }
+
+    // ===================================================
+    // Step 3: 行列積の逆伝播 (dQ = dS ・ K, dK = dS^T ・ Q)
+    // ===================================================
+
+    // dQ = dS ・ K
+    // [seq_len x seq_len] * [seq_len x embed_dim]
+    // -> [seq_len x embed_dim]
+    mat_mul(&dS, K, dQ);
+
+    // dK = dS^T ・ Q
+    // [seq_len x seq_len]^T * [seq_len x embed_dim]
+    // -> [seq_len x embed_dim]
+    mat_mul_a_trans(&dS, Q, dK);
+
+    // ワークスペースの解放
+    free_matrix(&dS);
+}
