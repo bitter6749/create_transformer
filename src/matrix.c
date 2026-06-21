@@ -65,12 +65,12 @@ void mat_mul_a_trans(const Matrix *A, const Matrix *B, Matrix *C) {
     exit(EXIT_FAILURE);
   }
 
-  for (int A_col; A_col < A->cols; A_col++) {
-    for (int B_col; B_col < B->cols; B_col++) {
+  for (int A_col = 0; A_col < A->cols; A_col++) {
+    for (int B_col = 0; B_col < B->cols; B_col++) {
       // 各行の列と内積
       float inner_product = 0.0f;
 
-      for (int A_row; A_row < A->rows; A_row++) {
+      for (int A_row = 0; A_row < A->rows; A_row++) {
         float a = A->data[A_row * A->cols + A_col];
         float b = B->data[A_row * B->cols + B_col];
 
