@@ -4,16 +4,6 @@
 #include "matrix.h"
 #include "transformer.h"
 
-// 将来 transformer.h に追加する関数のプロトタイプ宣言（テスト用に先出し）
-void backward_attention_qkv(
-    const Matrix *dA, 
-    const Matrix *A_prob, 
-    const Matrix *Q, 
-    const Matrix *K, 
-    Matrix *dQ, 
-    Matrix *dK
-);
-
 void test_backward_attention_qkv(void) {
     printf("[テスト] Attention逆伝播の検証中...\n");
 
@@ -44,7 +34,7 @@ void test_backward_attention_qkv(void) {
     Matrix dQ = create_matrix(seq_len, embed_dim);
     Matrix dK = create_matrix(seq_len, embed_dim);
 
-    // 4. PyTorchで backward() をさせて算出した「絶対的な正解の壁」
+    // 4. PyTorchで backward() をさせて算出した正解
     float expected_dQ[6] = {
         0.171348f,  0.171348f,  0.171348f,
         0.000000f,  0.000000f,  0.000000f
