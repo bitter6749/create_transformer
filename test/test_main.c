@@ -4,6 +4,7 @@
 extern void test_matrix_ops();
 extern void test_softmax_layer();
 extern void test_attention_layer();
+extern void test_backward_attention_qkv();
 
 int main() {
     printf("==============================================\n");
@@ -16,6 +17,7 @@ int main() {
     // 各層のロジックテスト
     test_softmax_layer();
     test_attention_layer();
+    test_backward_attention_qkv();
 
     printf("==============================================\n");
     printf("===  すべてのテストに合格しました！ (GREEN)  ===\n");
