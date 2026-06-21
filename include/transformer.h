@@ -9,6 +9,14 @@
 #define SEQ_LEN    4  // 入力する文字数(例: "cat " の四文字)
 #define EMBED_DIM  16  // 文字を表現するベクトルの次元数 (RNN の HIDDENに相当)
 
+// 出力層の順伝播
+// 入力特徴量 X_features の最後のトークンから、次に来る文字の確立分布を計算する
+void forward_lm_head(
+  const Matrix *X_features, // [SEQ_LEN x EMBED_DIM] (Attention または MLP の出力)
+  const Matrix *W_out,      // [VOCAB_SIZE x EMBED_DIM]
+  Matrix *output_probabilities  // [1 x VOCAB_SIZE] (最終出力)
+);
+
 // モデル全体の順伝播
 void forward_transformer(
   SimpleTransformer *model,
