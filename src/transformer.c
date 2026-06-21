@@ -60,12 +60,9 @@ void forward_transformer(
   Matrix X = create_matrix(SEQ_LEN, EMBED_DIM);
 
   // Q, K, V ベクトル
-  // Q: クエリ
-  // K: キュー
-  // V: バリュー
-  Matrix Q = create_matrix(SEQ_LEN, EMBED_DIM);
-  Matrix K = create_matrix(SEQ_LEN, EMBED_DIM);
-  Matrix V = create_matrix(SEQ_LEN, EMBED_DIM);
+  Matrix Q = create_matrix(SEQ_LEN, EMBED_DIM); // Q: クエリ
+  Matrix K = create_matrix(SEQ_LEN, EMBED_DIM); // K: キュー
+  Matrix V = create_matrix(SEQ_LEN, EMBED_DIM); // V: バリュー
 
   Matrix A_prob = create_matrix(SEQ_LEN, SEQ_LEN);
   Matrix Z = create_matrix(SEQ_LEN, EMBED_DIM);
