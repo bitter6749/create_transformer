@@ -24,12 +24,11 @@ void forward_attention(
   // 3. スケール調整とSoftmax
   int seq_len = X->rows;
   int embed_dim = Q->cols;
-  float scale = sqrtf(embed_dim);
+  float scale = 1.0f / sqrtf(embed_dim);
+
+  scale_matrix(A_prob, scale); // 全要素を一括で 1/sqrt(d_k) 倍する
 
   for (int i = 0; i < seq_len; i++) {
-    for (int j = 0; j < seq_len; j++) {
-      A_prob->data[i * seq_len + j] /= scale;
-    }
     softmax_row(A_prob, i);
   }
 
@@ -83,10 +82,13 @@ void backward_attention(
     }
     for (int j = 0; j < seq_len; j++) {
       int idx = i * seq_len + j;
-      float ds_val = A_prob->data[idx] * (dA.data[idx] - sum_da_a);
-      dS.data[idx] = ds_val / sqrtf(embed_dim);
+      dS.data[idx] = A_prob->data[idx] * (dA.data[idx] - sum_da_a);
     }
   }
+
+  // Softmax微分の結果をスケール調整
+  float scale = 1.0f / sqrtf(embed_dim);
+  scale_matrix(&dS, scale);
 
   // ====================================
   // === Step 3: A = Q ・ K^T の逆伝播 ===

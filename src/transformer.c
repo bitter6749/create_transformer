@@ -35,20 +35,25 @@ void forward_transformer(
 
   Matrix A_prob = create_matrix(SEQ_LEN, SEQ_LEN);
   Matrix Z = create_matrix(SEQ_LEN, EMBED_DIM);
+
+  // MLP層用の一時ワークスペースを追加
+  // Y_mlp: MLP の最終出力 [SEQ_LEN x EMBED_DIM]
+  Matrix Y_mlp = create_matrix(SEQ_LEN, EMBED_DIM);
+
   Matrix Output_Liner = create_matrix(1, VOCAB_SIZE);
 
   // ===============================================
-  // === step1: Embedding (文字IDをベクトルに変換) ===
+  // === STEP 1: Embedding (文字IDをベクトルに変換) ===
   // ===============================================
-  for (int t = 0; t < SEQ_LEN; t++) {
-    int id = input_ids[t];
-    for (int d = 0; d < EMBED_DIM; d++) {
-      X.data[t * EMBED_DIM + d] = model->token_embedding.data[id * EMBED_DIM + d];
-    }
-  }
+  forward_embedding(
+    input_ids, 
+    SEQ_LEN, EMBED_DIM, 
+    &model->token_embedding, 
+    &X
+  );
 
   // =============================================
-  // === step2: Attention (注意機構) の 呼び出し ===
+  // === STEP 2: Attention (注意機構) の 呼び出し ===
   // ==============================================
 
   //        { A0,0 A0,1 A0,2 A0,3 } <- 'c' から見た各文字への注目度
@@ -56,7 +61,6 @@ void forward_transformer(
   //  A =   |                     |
   //        { A2,0 A2,1 A2,2 A2,3 } <- 't' から見た各文字への注目度
   //        { A3,0 A3,1 A3,2 A3,3 } <- ' ' から見た各文字への注目度
-
   forward_attention(
     &X,
     &model->W_q, &model->W_k, &model->W_v,
@@ -65,8 +69,22 @@ void forward_transformer(
     &Z
   );
 
+  // ======================================================
+  // === STEP 3: MLP(多層パーセプトロン)層の呼び出しを追加 ===
+  // ======================================================
+  // Attention の出力 Z を入力とし、結果を Y_mlp に格納する
+  forward_mlp(
+    &Z,
+    &model->W1,
+    &model->b1,
+    &model->W2,
+    &model->b2,
+    &model->H,
+    &Y_mlp
+  );
+
   // ===================================================
-  // === step4: 出力層 (最後の文字の予想結果だけを使う) ===
+  // === STEP 4: 出力層 (最後の文字の予想結果だけを使う) ===
   // ===================================================
 
   // 今回は「最後の文字 (i = SEQ_LEN - 1)」の次の文字を予測したいので、Zの最後の行だけを計算
