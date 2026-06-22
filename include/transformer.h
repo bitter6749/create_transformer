@@ -4,11 +4,6 @@
 #include "model.h"
 #include "matrix.h"
 
-// 設定
-#define VOCAB_SIZE 27 // a~z + space
-#define SEQ_LEN    4  // 入力する文字数(例: "cat " の四文字)
-#define EMBED_DIM  16  // 文字を表現するベクトルの次元数 (RNN の HIDDENに相当)
-
 // 出力層の順伝播
 // 入力特徴量 X_features の最後のトークンから、次に来る文字の確立分布を計算する
 void forward_lm_head(

@@ -4,9 +4,6 @@
 #include "transformer.h"
 #include "matrix.h"
 
-// 隠れ層の次元数を設定 (EMBED_DIM の 4倍が一般的)
-#define MLP_HIDDEN_DIM    (EMBED_DIM * 4)
-
 void forward_mlp(
   const Matrix *X, 
   const Matrix *W1,
