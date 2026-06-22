@@ -5,6 +5,7 @@
 #include "transformer.h"
 #include "mlp.h"
 #include "ops.h"
+#include "tokenizer.h"
 
 // 指定した範囲 (-scale から +scale) のランダムな少数を生成する関数
 float rand_weight(float scale) {
@@ -62,11 +63,19 @@ int main() {
     model.W_out.data[i] = rand_weight(0.1f);
   }
 
-  // 2. 入力データ ("cat " を表すIDの配列)
-  // c=2, a=0, t=19, space=26
-  int input_ids[SEQ_LEN] = {2, 0, 19, 26};
-  // 正解 (ターゲット) : 次に来る文字を 'c' (ID: 2) と仮定
-  int target_id = 2;
+  // 2. トークナイザーを使った訓練データの設定
+  const char *input_text = "おはよ ？"; // 入力テキスト
+  int input_ids[SEQ_LEN];
+
+  // テキストを自動でトークンID配列に変換
+  tokenize(input_text, input_ids, SEQ_LEN);
+
+  // 正解 (ターゲット): 次に予測してほしい言葉は "元気" (ID: 3)
+  int target_id = 3;
+
+  printf("入力テキスト: \"%s\" ──> トークンID: [%d, %d, %d, %d]\n", 
+         input_text, input_ids[0], input_ids[1], input_ids[2], input_ids[3]);
+  printf("予測ターゲット: \"%s\" (ID: %d)\n\n", VOCAB_DICT[target_id], target_id);
 
   // 3. 勾配 (グラジエント) を格納するためのバッファを確保 (モデルの重みとまったく同じサイズ)
   Matrix dW_out = create_matrix(EMBED_DIM, VOCAB_SIZE);
@@ -75,10 +84,12 @@ int main() {
   Matrix dln1_beta[NUM_LAYERS];
   Matrix dln2_gamma[NUM_LAYERS]; 
   Matrix dln2_beta[NUM_LAYERS];
+
   Matrix dW1[NUM_LAYERS];
   Matrix db1[NUM_LAYERS]; 
   Matrix dW2[NUM_LAYERS];
   Matrix db2[NUM_LAYERS];
+
   Matrix dW_q[NUM_LAYERS];
   Matrix dW_k[NUM_LAYERS];
   Matrix dW_v[NUM_LAYERS];
@@ -104,7 +115,7 @@ int main() {
 
   // ハイパーパラメータ
   float learning_rate = 0.25f; // 学習率 (lr)
-  int epochs = 600;           // 100回繰り返し学習する
+  int epochs = 100;           // 100回繰り返し学習する
 
   printf("=== Transformerの学習を開始します ===\n");
 
@@ -152,11 +163,24 @@ int main() {
       gradient_descent_update(&model.W2[l],    &dW2[l],    learning_rate);
       gradient_descent_update(&model.b2[l],    &db2[l],    learning_rate);
     }
-    // 定期的に進捗 (正解文字 'c' の予測率の変化) を表示
+
+    // 成果の表示
     if (epoch == 1 || epoch % 20 == 0) {
       forward_transformer(&model, input_ids, &output_probabilities);
-      printf("Epoch %3d: 正解文字(ID: %d)の予測確率: %.2f%%\n",
-              epoch, target_id, output_probabilities.data[target_id] * 100.0f);
+
+      // 最も確率の高い単語IDを探して、テキストでデトークナイズ表示する
+      int max_id = 0;
+      float max_prob = output_probabilities.data[0];
+      for (int i = 1; i < VOCAB_SIZE; i++) {
+        if (output_probabilities.data[i] > max_prob) {
+          max_prob = output_probabilities.data[i];
+          max_id = i;
+        }
+      }
+
+      printf("Epoch %3d: 正解\"%s\"の確率: %.2f%% | 現在のモデルの予測結果: \"%s\" (確信度: %.2f%%)\n",
+              epoch, VOCAB_DICT[target_id], output_probabilities.data[target_id] * 100.0f,
+              VOCAB_DICT[max_id], max_prob * 100.0f);
     }
   }
 
