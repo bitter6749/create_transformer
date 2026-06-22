@@ -26,6 +26,25 @@ void forward_embedding(
   }
 }
 
+// 埋め込み(Embedding)層の逆伝播
+void backward_embedding (
+  const Matrix *dX,
+  const int *input_ids,
+  int seq_len, 
+  int embed_dim,
+  Matrix *embedding_table
+) {
+  for (int t = 0; t < seq_len; t++) {
+    int id = input_ids[t]; // 今回の文字ID を特定
+    
+    for (int d = 0; d < embed_dim; d++) {
+      // One-Hot 行列との積
+      // 大量の 0 との掛け算を省くためにインデックスを指定して加算
+      embedding_table->data[id * embed_dim + d] += dX ->data[t * embed_dim + d];
+    }
+  }
+}
+
 // 行列 src の指定された 行 row のデータを 1行の行列 dest にコピーする
 void extract_row(const Matrix *src, int row, Matrix *dest) {
   int cols = src->cols;
