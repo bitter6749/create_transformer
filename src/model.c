@@ -11,21 +11,9 @@ void init_model(SimpleTransformer *model) {
     model->ln1_gamma[l] = create_matrix(1, EMBED_DIM);
     model->ln1_beta[l]  = create_matrix(1, EMBED_DIM);
 
-    // 初期値設定 (gammaは1.0, betaは0.0)
-    for (int j = 0; j < EMBED_DIM; j++) {
-      model->ln1_gamma[l].data[j] = 1.0f;
-      model->ln1_beta[l].data[j] = 0.0f;
-    }
-
     // LayerNorm2 (MLP手前用) の確保
     model->ln2_gamma[l] = create_matrix(1, EMBED_DIM);
     model->ln2_beta[l]  = create_matrix(1, EMBED_DIM);
-
-    // 初期値設定 (gammaは1.0, betaは0.0)
-    for (int j = 0; j < EMBED_DIM; j++) {
-      model->ln2_gamma[l].data[j] = 1.0f;
-      model->ln2_beta[l].data[j] = 0.0f;
-    }
 
     // Attention層
     model->W_q[l] = create_matrix(EMBED_DIM, EMBED_DIM);
