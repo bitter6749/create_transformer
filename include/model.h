@@ -13,10 +13,10 @@
 
 #define VOCAB_SIZE VOCAB_SIZE_NEW // 10単語
 #define SEQ_LEN    4  // 入力する文字数(例: "cat " の四文字)
-#define EMBED_DIM  16  // 文字を表現するベクトルの次元数 (RNN の HIDDENに相当)
+#define EMBED_DIM  32  // 文字を表現するベクトルの次元数 (RNN の HIDDENに相当)
 
 // 隠れ層の次元数を設定 (EMBED_DIM の 4倍が一般的)
-#define MLP_HIDDEN_DIM    (EMBED_DIM * 4) // 64
+#define MLP_HIDDEN_DIM    (EMBED_DIM * 4) // 128
 #define NUM_LAYERS        2 
 
 typedef struct {

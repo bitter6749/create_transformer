@@ -305,7 +305,7 @@ void save_matrix(const Matrix *m, const char *filename) {
   // 行数、列数、データの中身を順番にバイナリとして書き出す
   fwrite(&m->rows, sizeof(int), 1, f);
   fwrite(&m->cols, sizeof(int), 1, f);
-  fwrite(&m->data, sizeof(float), m->rows * m->cols, f);
+  fwrite(m->data, sizeof(float), m->rows * m->cols, f);
 
   fclose(f);
 }
