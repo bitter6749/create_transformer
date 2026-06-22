@@ -139,10 +139,79 @@ void backward_transformer(
   SimpleTransformer *model,
   const int *input_ids,
   int target_id,
-  // 各層の重みの勾配
+
+  // 各層の重み・バイアスの勾配
   Matrix *dW_out,
-  Matrix *dW_q,
-  Matrix *dW_k,
-  Matrix *dW_v
+  Matrix *dW1, Matrix *db1, Matrix *dW2, Matrix *db2, 
+  Matrix *dW_q, Matrix *dW_k, Matrix *dW_v
 ) {
+  // ====================================================
+  // 逆伝播の計算には、順伝播時の「途中経過の行列の値」が必要
+  // forwardを走らせて、各種中間バッファを揃える
+  //（X, Q, K, V, A_prob, Z, Y_mlp, output_probabilities）
+  // ====================================================
+  Matrix X        = create_matrix(SEQ_LEN, EMBED_DIM);
+  Matrix Q        = create_matrix(SEQ_LEN, EMBED_DIM);
+  Matrix K        = create_matrix(SEQ_LEN, EMBED_DIM);
+  Matrix V        = create_matrix(SEQ_LEN, EMBED_DIM);
+  Matrix A_prob   = create_matrix(SEQ_LEN, SEQ_LEN);
+  Matrix Z        = create_matrix(SEQ_LEN, EMBED_DIM);
+  Matrix Y_mlp    = create_matrix(SEQ_LEN, EMBED_DIM);
+  Matrix output_probabilities    = create_matrix(1, VOCAB_SIZE);
+
+  // =============================================
+  // 1. 順伝播を計算して中間データをバッファに格納する
+  // =============================================
+  forward_embedding(input_ids, SEQ_LEN, EMBED_DIM, &model->token_embedding, &X);
+  forward_attention(&X, &model->W_q, &model->W_k, &model->W_v, &Q, &K, &V, &A_prob, &Z);
+  forward_mlp(&Z, &model->W1, &model->b1, &model->W2, &model->b2, &model->H, &Y_mlp);
+  forward_lm_head(&Y_mlp, &model->W_out, &output_probabilities);
+
+  // =======================================
+  // 2. 実際に逆伝播を行う ( 出力層 -> 入力層 )
+  // ========================================
+
+  // 各層を流れる誤差(勾配)を受け渡すためのバッファ
+  Matrix dY_mlp = create_matrix(SEQ_LEN, EMBED_DIM); // 出力層からMLPへ流れる誤差
+  Matrix dZ     = create_matrix(SEQ_LEN, EMBED_DIM); // MLPからAttentionへ流れる誤差
+  Matrix dX     = create_matrix(SEQ_LEN, EMBED_DIM); // AttentionからEmbeddingへ流れる誤差
+
+  // -----------------------------
+  // --- STEP 1: 出力層の逆伝播 ---
+  // -----------------------------
+  // 最終出力の確率分布と正解ID (target_id) から誤差を計算し、dY_mlp と dW_out を求める
+  backward_lm_head(&output_probabilities, target_id, &Y_mlp, &model->W_out, &Y_mlp, dW_out);
+
+  // ----------------------------------------------
+  // --- STEP 2: MLP(多層パーセプトロン)層の逆伝播 ---
+  // -----------------------------------------------
+  // 出力層から来た誤差 dY_mlp を元に、 W1, b1, W2, b2 の勾配を計算し、下流の dZ へ流す
+  backward_mlp(&Y_mlp, &Z, &dZ, &model->H, &model->W1, &model->W2, dW1, db1, dW2, db2);
+
+  // ---------------------------------------------
+  // --- STEP 3: Attention (注意機構) 層の逆伝播 ---
+  // ----------------------------------------------
+  // MLPから来た誤差 dZ を元に、W_q, W_k, W_v の勾配を計算し、最下流の dX へ流す
+  backward_attention(&dZ, &A_prob, &Q, &K, &V, &X, &model->W_q, &model->W_k, &model->W_v, dW_q, dW_k, dW_v);
+
+  // -------------------------------------------------
+  // --- STEP 4: Embedding (単語埋め込み) 層の逆伝播 ---
+  // -------------------------------------------------
+  // 最下流に届いた dX を使って、今回入力された文字の埋め込みパラメーターを修正する
+  backward_embedding(&dX, input_ids, SEQ_LEN, EMBED_DIM, &model->token_embedding);
+
+  // =======================
+  // 3. バッファ(メモリ)の解放
+  // =======================
+  free_matrix(&X);
+  free_matrix(&Q);
+  free_matrix(&K);
+  free_matrix(&V);
+  free_matrix(&A_prob);
+  free_matrix(&Z);
+  free_matrix(&Y_mlp);
+  free_matrix(&output_probabilities);
+  free_matrix(&dY_mlp);
+  free_matrix(&dZ);
+  free_matrix(&dX);
 }

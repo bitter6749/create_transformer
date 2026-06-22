@@ -29,11 +29,11 @@ void backward_transformer(
   SimpleTransformer *model,
   const int *input_ids,
   int target_id,
-  // 各層の重みの勾配
+
+  // 各層の重み・バイアスの勾配
   Matrix *dW_out,
-  Matrix *dW_q,
-  Matrix *dW_k,
-  Matrix *dW_v
+  Matrix *dW1, Matrix *db1, Matrix *dW2, Matrix *db2, 
+  Matrix *dW_q, Matrix *dW_k, Matrix *dW_v
 );
 
 #endif // TRANSFORMER_H
