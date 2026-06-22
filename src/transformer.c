@@ -82,6 +82,9 @@ void forward_transformer(
     &X
   );
 
+  // 位置エンコーディング
+  apply_positional_encoding(&X);
+
   // ==============================================
   // === STEP 3: Attention (注意機構) の 呼び出し ===
   // ===============================================
@@ -214,6 +217,7 @@ void backward_transformer(
   // 1. 順伝播を計算して中間データをバッファに格納する
   // =============================================
   forward_embedding(input_ids, SEQ_LEN, EMBED_DIM, &model->token_embedding, &X);
+  apply_positional_encoding(&X);
   forward_attention(&X, &model->W_q, &model->W_k, &model->W_v, &Q, &K, &V, &A_prob, &Z);
   forward_mlp(&Z, &model->W1, &model->b1, &model->W2, &model->b2, &model->H, &Y_mlp);
   forward_lm_head(&Y_mlp, &model->W_out, &output_probabilities);

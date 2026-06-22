@@ -51,6 +51,30 @@ void forward_embedding(
   }
 }
 
+// 位置エンコーディング
+// 行列 x [SEQ_LEN x EMBED_DIM] に対し、位置エンコーディングを直接足し算する
+void apply_positional_encoding(Matrix *X) {
+  int seq_len = X->rows;
+  int embed_dim = X->cols;
+
+  for (int pos = 0; pos < seq_len; pos++) {
+    for (int i = 0; i < embed_dim / 2; i++) {
+      // 分母の計算: 10000^(2i / d_model)
+      float budget = (float)(2 * i) / (float)embed_dim;
+      float denom = powf(10000.0f, budget);
+
+      // 偶数次元には Sin, 奇数次元には Cos
+      float sin_val = sinf((float)pos / denom);
+      float cos_val = cosf((float)pos / denom);
+
+      // 元の行列 X に足し算する
+      X->data[pos * embed_dim + (2 * i)] += sin_val;
+      X->data[pos * embed_dim + (2 * i + 1)] += cos_val;
+    }
+  }
+}
+
+
 // ソフトマックス関数
 void softmax_row(Matrix *m, int row) {
   int cols = m->cols;

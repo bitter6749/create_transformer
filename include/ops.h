@@ -25,6 +25,10 @@ void forward_embedding(
     const Matrix *embedding_table,
     Matrix *X
 );
+
+// 位置エンコーディング
+void apply_positional_encoding(Matrix *X);
+
 void softmax_row(Matrix *m, int row);
 void relu(Matrix *m);
 
