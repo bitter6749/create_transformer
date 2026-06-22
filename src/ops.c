@@ -1,6 +1,31 @@
 #include <math.h>
 #include "ops.h"
 
+// ===============
+// === 行列関連 ===
+// ===============
+
+// 行列 src の指定された 行 row のデータを 1行の行列 dest にコピーする
+void extract_row(const Matrix *src, int row, Matrix *dest) {
+  int cols = src->cols;
+
+  for (int j = 0; j < cols; j++) {
+    dest->data[j] = src->data[row * cols + j];
+  }
+}
+
+// 行列のすべての要素にスカラー(実数)を掛け算する
+void scale_matrix(Matrix *m, float scalar) {
+  int total_elements = m->rows * m->cols;
+  for (int i = 0; i < total_elements; i++) {
+    m->data[i] *= scalar;
+  }
+}
+
+// ===================
+// === 順伝播の関数 ===
+// ===================
+
 // 埋め込み(Embedding)層
 // input_ids: [SEQ_LEN] のID配列
 // embedding_table: モデルが持つ単語埋め込み行列 [VOCAB_SIZE x EMBED_DIM]
@@ -23,42 +48,6 @@ void forward_embedding(
     for (int d = 0; d < embed_dim; d++) {
       X->data[t * embed_dim + d] = embedding_table->data[id * embed_dim + d];
     }
-  }
-}
-
-// 埋め込み(Embedding)層の逆伝播
-void backward_embedding (
-  const Matrix *dX,
-  const int *input_ids,
-  int seq_len, 
-  int embed_dim,
-  Matrix *embedding_table
-) {
-  for (int t = 0; t < seq_len; t++) {
-    int id = input_ids[t]; // 今回の文字ID を特定
-    
-    for (int d = 0; d < embed_dim; d++) {
-      // One-Hot 行列との積
-      // 大量の 0 との掛け算を省くためにインデックスを指定して加算
-      embedding_table->data[id * embed_dim + d] += dX ->data[t * embed_dim + d];
-    }
-  }
-}
-
-// 行列 src の指定された 行 row のデータを 1行の行列 dest にコピーする
-void extract_row(const Matrix *src, int row, Matrix *dest) {
-  int cols = src->cols;
-
-  for (int j = 0; j < cols; j++) {
-    dest->data[j] = src->data[row * cols + j];
-  }
-}
-
-// 行列のすべての要素にスカラー(実数)を掛け算する
-void scale_matrix(Matrix *m, float scalar) {
-  int total_elements = m->rows * m->cols;
-  for (int i = 0; i < total_elements; i++) {
-    m->data[i] *= scalar;
   }
 }
 
@@ -85,6 +74,39 @@ void softmax_row(Matrix *m, int row) {
     row_data[i] /= sum;
   }
 }
+
+void relu(Matrix *m) {
+  int total_elemnts = m->rows * m->cols;
+  for (int i = 0; i < total_elemnts; i++) {
+    if (m->data[i] < 0.0f) {
+      m->data[i] = 0.0f;
+    }
+  }
+}
+
+// ===================
+// === 逆伝播の関数 ===
+// ===================
+
+// 埋め込み(Embedding)層の逆伝播
+void backward_embedding (
+  const Matrix *dX,
+  const int *input_ids,
+  int seq_len, 
+  int embed_dim,
+  Matrix *embedding_table
+) {
+  for (int t = 0; t < seq_len; t++) {
+    int id = input_ids[t]; // 今回の文字ID を特定
+    
+    for (int d = 0; d < embed_dim; d++) {
+      // One-Hot 行列との積
+      // 大量の 0 との掛け算を省くためにインデックスを指定して加算
+      embedding_table->data[id * embed_dim + d] += dX ->data[t * embed_dim + d];
+    }
+  }
+}
+
 
 void backward_softmax(const Matrix *dA, const Matrix *A, Matrix *dS) {
   int rows = A->rows;
@@ -126,15 +148,6 @@ void backward_softmax(const Matrix *dA, const Matrix *A, Matrix *dS) {
   }
 }
 
-void relu(Matrix *m) {
-  int total_elemnts = m->rows * m->cols;
-  for (int i = 0; i < total_elemnts; i++) {
-    if (m->data[i] < 0.0f) {
-      m->data[i] = 0.0f;
-    }
-  }
-}
-
 void backward_relu(const Matrix *dOut, const Matrix *Out, Matrix *dIn) {
   int total_elements = Out->rows * Out->cols;
 
@@ -147,4 +160,16 @@ void backward_relu(const Matrix *dOut, const Matrix *Out, Matrix *dIn) {
       dIn->data[i] = 0.0f;
     }
   } 
+}
+
+// ============================
+// === 重みパラメーターの更新 ===
+// ============================
+
+// パラメーター更新の式: W = W - lr *dW
+void gradient_descent_update(Matrix *W, const Matrix *dW, float lr) { 
+  int total_elements = W->rows * W->cols;
+  for (int i = 0; i < total_elements; i++) {
+    W->data[i] -= lr * dW->data[i];
+  }
 }
