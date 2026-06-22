@@ -29,6 +29,14 @@ void forward_embedding(
 // 位置エンコーディング
 void apply_positional_encoding(Matrix *X);
 
+// layerNormの順伝播
+void forward_layernom(
+  const Matrix *X,
+  const Matrix *gamma,
+  const Matrix *beta,
+  Matrix *Out
+);
+
 void softmax_row(Matrix *m, int row);
 void relu(Matrix *m);
 
@@ -44,6 +52,17 @@ void backward_embedding (
   int embed_dim,
   Matrix *embedding_table
 );
+
+// layerNormの逆伝播
+void backward_layernorm(
+  const Matrix *dOut,
+  const Matrix *X,
+  const Matrix *gamma,
+  Matrix *dX,
+  Matrix *dgamma,
+  Matrix *dbeta
+);
+
 void backward_softmax(const Matrix *dA, const Matrix *A, Matrix *dS);
 void backward_relu(const Matrix *dOut, const Matrix *Out, Matrix *dIn);
 

@@ -75,6 +75,42 @@ void apply_positional_encoding(Matrix *X) {
   }
 }
 
+// layerNormの順伝播
+void forward_layernom(
+  const Matrix *X,
+  const Matrix *gamma,
+  const Matrix *beta,
+  Matrix *Out
+) {
+  int rows = X->rows;
+  int cols = X->cols;
+  float eps = 1e-5f; // 0除算を防ぐ微小値
+
+  for (int i = 0; i < rows; i++) {
+    // 1. 平均 μ の計算
+    float sum = 0.0f;
+    for (int j = 0; j < cols; j++) {
+      sum += X->data[i * cols + j];
+    }
+    float mean = sum / (float)cols;
+
+    // 2. 分散 σ^2 の計算
+    float var_sum = 0.0f;
+    for (int j = 0; j < cols; j++) {
+      float diff = X->data[i * cols + j] - mean;
+      var_sum += diff * diff;
+    }
+    float var = var_sum / (float)cols;
+
+    // 3. 正規化とアフィン変換 (y = gamma * x_hat + beta)
+    for (int j = 0; j < cols; j++) {
+      int idx = i * cols + j;
+      float x_hat = (X->data[idx] - mean) / sqrtf(var + eps);
+
+      Out->data[idx] = gamma->data[j] * x_hat + beta->data[j];
+    }
+  }
+}
 
 // ソフトマックス関数
 void softmax_row(Matrix *m, int row) {
@@ -132,6 +168,64 @@ void backward_embedding (
   }
 }
 
+// layerNormの逆伝播
+void backward_layernorm(
+  const Matrix *dOut,
+  const Matrix *X,
+  const Matrix *gamma,
+  Matrix *dX,
+  Matrix *dgamma,
+  Matrix *dbeta
+) {
+  int rows = X->rows;
+  int cols = X->cols;
+  float eps = 1e-5f;
+
+  // 勾配の初期化 (dgamma, dbeta は複数のトークン行から足し算で蓄積されるため)
+  for (int j = 0; j < cols; j++) {
+    dgamma->data[j] = 0.0f;
+    dbeta->data[j] = 0.0f;
+  }
+
+  for (int i = 0; i < rows; i++) {
+    // 順伝播の平均と分散を再計算
+    float sum = 0.0f;
+    for (int j = 0; j < cols; j++) sum += X->data[i * cols + j];
+    float mean = sum / (float)cols;
+
+    float var_sum = 0.0f;
+    for (int j = 0; j < cols; j++) {
+      float diff = X->data[i * cols + j] - mean;
+      var_sum += diff * diff;
+    }
+    float var = var_sum / (float)cols;
+    float inv_std = 1.0f / sqrtf(var + eps);
+
+    // 中間計算用
+    float sum_dout_xhat = 0.0f;
+    float sum_dout = 0.0f;
+    for (int j = 0; j < cols; j++) {
+      int idx = i * cols + j;
+      float x_hat = (X->data[idx] - mean) * inv_std;
+
+      // パラメーターの勾配蓄積
+      dgamma->data[j] += dOut->data[idx] * x_hat;
+      dbeta->data[j] += dOut->data[idx];
+
+      sum_dout_xhat += dOut->data[idx] * gamma->data[j] * x_hat;
+      sum_dout      += dOut->data[idx] * gamma->data[j];
+    }
+
+    // 下流への入力誤差 dX の計算 (公式の展開)
+    for (int j = 0; j < cols; j++) {
+      int idx = i * cols + j;
+      float x_hat = (X->data[idx] - mean) * inv_std;
+      dX->data[idx] = (inv_std / (float)cols) * (
+        (float)cols * dOut->data[idx] * gamma->data[j] - sum_dout - x_hat * sum_dout_xhat
+      );
+    }
+  }
+}
 
 void backward_softmax(const Matrix *dA, const Matrix *A, Matrix *dS) {
   int rows = A->rows;
