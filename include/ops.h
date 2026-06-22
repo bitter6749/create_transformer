@@ -72,4 +72,13 @@ void backward_relu(const Matrix *dOut, const Matrix *Out, Matrix *dIn);
 
 void gradient_descent_update(Matrix *W, const Matrix *dW, float lr);
 
+// =====================================
+// === 重みパラメーターの保存・読み込み ===
+// =====================================
+
+// 行列のデータをファイルに保存する
+void save_matrix(const Matrix *m, const char *filename);
+// ファイルから行列のデータを読み込む (メモリ確保は事前に済んでいる前提)
+void load_matrix(Matrix *m, const char *filename);
+
 #endif // OPS_H

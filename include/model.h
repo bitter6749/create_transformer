@@ -1,6 +1,9 @@
 #ifndef MODEL_H
 #define MODEL_H
 
+#include <stdio.h>
+#include <stdlib.h>
+
 #include "matrix.h"
 #include "tokenizer.h"
 
@@ -54,5 +57,9 @@ typedef struct {
 // --- モデルのメモリ管理関数 ---
 void init_model(SimpleTransformer *model);
 void free_model(SimpleTransformer *model);
+
+// --- モデルの保存・読み込み --- 
+void save_model_checkpoint(const SimpleTransformer *model, const char *prefix);
+void load_model_checkpoint(SimpleTransformer *model, const char *prefix);
 
 #endif // MODEL_H

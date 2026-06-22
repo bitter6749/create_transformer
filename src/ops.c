@@ -1,4 +1,6 @@
 #include <math.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include "ops.h"
 
 // ===============
@@ -285,4 +287,51 @@ void gradient_descent_update(Matrix *W, const Matrix *dW, float lr) {
   for (int i = 0; i < total_elements; i++) {
     W->data[i] -= lr * dW->data[i];
   }
+}
+
+// =====================================
+// === 重みパラメーターの保存・読み込み ===
+// =====================================
+
+// 行列のデータをファイルに保存する
+void save_matrix(const Matrix *m, const char *filename) {
+  FILE *f = fopen(filename, "wb");
+
+  if (f == NULL) {
+    fprintf(stderr, "Error: ファイル %s を開けませんでした。\n", filename);
+    return;
+  }
+
+  // 行数、列数、データの中身を順番にバイナリとして書き出す
+  fwrite(&m->rows, sizeof(int), 1, f);
+  fwrite(&m->cols, sizeof(int), 1, f);
+  fwrite(&m->data, sizeof(float), m->rows * m->cols, f);
+
+  fclose(f);
+}
+
+// ファイルから行列のデータを読み込む 
+void load_matrix(Matrix *m, const char *filename) {
+  FILE *f = fopen(filename, "rb");
+  if (f == NULL) {
+    fprintf(stderr, "Error: ファイル %s を開けませんでした。\n", filename);
+    return;
+  }
+
+  int rows, cols;
+  fread(&rows, sizeof(int), 1, f);
+  fread(&cols, sizeof(int), 1, f);
+
+  // 安全チェック: 読み込もうとしているファイルの行列サイズが、プログラム側の想定と一致しているか
+  if (rows != m->rows || cols != m->cols) {
+    fprintf(stderr, "Error: %s の行列サイズ [%dx%d] が、プログラムの想定 [%dx%d] 与えられた行列と不一致です。\n",
+            filename, rows, cols, m->rows, m->cols);
+    fclose(f);
+    return;
+  }
+
+  // データをメモリに読み込む
+  fread(m->data, sizeof(float), rows * cols, f);
+
+  fclose(f);
 }

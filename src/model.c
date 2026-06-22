@@ -1,6 +1,7 @@
 #include "model.h"
 #include "transformer.h"
 #include "mlp.h"
+#include "ops.h"
 
 void init_model(SimpleTransformer *model) {
   // Embedding
@@ -60,4 +61,64 @@ void free_model(SimpleTransformer *model) {
 
   // Output
   free_matrix(&model->W_out);
+}
+
+void save_model_checkpoint(const SimpleTransformer *model, const char *prefix) {
+  char filename[256];
+  
+  // 1. Embedding層の保存
+  sprintf(filename, "%s_embedding.bin", prefix);
+  save_matrix(&model->token_embedding, filename);
+  
+  // 2. 各レイヤーの保存
+  for (int l = 0; l < NUM_LAYERS; l++) {
+    sprintf(filename, "%s_layer%d_ln1_gamma.bin", prefix, l); save_matrix(&model->ln1_gamma[l], filename);
+    sprintf(filename, "%s_layer%d_ln1_beta.bin", prefix, l);  save_matrix(&model->ln1_beta[l], filename);
+    sprintf(filename, "%s_layer%d_ln2_gamma.bin", prefix, l); save_matrix(&model->ln2_gamma[l], filename);
+    sprintf(filename, "%s_layer%d_ln2_beta.bin", prefix, l);  save_matrix(&model->ln2_beta[l], filename);
+    
+    sprintf(filename, "%s_layer%d_W_q.bin", prefix, l); save_matrix(&model->W_q[l], filename);
+    sprintf(filename, "%s_layer%d_W_k.bin", prefix, l); save_matrix(&model->W_k[l], filename);
+    sprintf(filename, "%s_layer%d_W_v.bin", prefix, l); save_matrix(&model->W_v[l], filename);
+    
+    sprintf(filename, "%s_layer%d_W1.bin", prefix, l);  save_matrix(&model->W1[l], filename);
+    sprintf(filename, "%s_layer%d_b1.bin", prefix, l);  save_matrix(&model->b1[l], filename);
+    sprintf(filename, "%s_layer%d_W2.bin", prefix, l);  save_matrix(&model->W2[l], filename);
+    sprintf(filename, "%s_layer%d_b2.bin", prefix, l);  save_matrix(&model->b2[l], filename);
+  }
+  
+  // 3. 出力層の保存
+  sprintf(filename, "%s_W_out.bin", prefix);
+  save_matrix(&model->W_out, filename);
+  printf(">>> チェックポイント \"%s\" にすべてのパラメータを保存しました。\n", prefix);
+}
+
+void load_model_checkpoint(SimpleTransformer *model, const char *prefix) {
+  char filename[256];
+  
+  // 1. Embedding層の保存
+  sprintf(filename, "%s_embedding.bin", prefix);
+  save_matrix(&model->token_embedding, filename);
+  
+  // 2. 各レイヤーの保存
+  for (int l = 0; l < NUM_LAYERS; l++) {
+    sprintf(filename, "%s_layer%d_ln1_gamma.bin", prefix, l); save_matrix(&model->ln1_gamma[l], filename);
+    sprintf(filename, "%s_layer%d_ln1_beta.bin", prefix, l);  save_matrix(&model->ln1_beta[l], filename);
+    sprintf(filename, "%s_layer%d_ln2_gamma.bin", prefix, l); save_matrix(&model->ln2_gamma[l], filename);
+    sprintf(filename, "%s_layer%d_ln2_beta.bin", prefix, l);  save_matrix(&model->ln2_beta[l], filename);
+    
+    sprintf(filename, "%s_layer%d_W_q.bin", prefix, l); save_matrix(&model->W_q[l], filename);
+    sprintf(filename, "%s_layer%d_W_k.bin", prefix, l); save_matrix(&model->W_k[l], filename);
+    sprintf(filename, "%s_layer%d_W_v.bin", prefix, l); save_matrix(&model->W_v[l], filename);
+    
+    sprintf(filename, "%s_layer%d_W1.bin", prefix, l);  save_matrix(&model->W1[l], filename);
+    sprintf(filename, "%s_layer%d_b1.bin", prefix, l);  save_matrix(&model->b1[l], filename);
+    sprintf(filename, "%s_layer%d_W2.bin", prefix, l);  save_matrix(&model->W2[l], filename);
+    sprintf(filename, "%s_layer%d_b2.bin", prefix, l);  save_matrix(&model->b2[l], filename);
+  }
+  
+  // 3. 出力層の保存
+  sprintf(filename, "%s_W_out.bin", prefix);
+  save_matrix(&model->W_out, filename);
+  printf(">>> チェックポイント \"%s\" にすべてのパラメータを保存しました。\n", prefix);
 }
