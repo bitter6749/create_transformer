@@ -7,23 +7,15 @@ CFALGS = -Wall -Wextra -pedantic -Iinclude
 # ディレクトリの設定
 SRC_DIR = src
 BUILD_DIR = build
-TEST_DIR = test
 
 # 最終的な実行ファイルの名前と場所
 TARGET = bin/transformer
-TEST_TARGET = bin/test_runner
 
 # src/ フォルダにあるすべての .cファイルを自動でリストアップ
 SRCS = $(wildcard $(SRC_DIR)/*.c)
 
-# test/ フォルダにあるすべての .cファイルを自動でリストアップ
-TEST_SRCS = $(wildcard $(TEST_DIR)/*.c)
-
 # リストアップした .c ファイルの名前を build/ 内の .oファイル名に自動変換する
 OBJS = $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRCS))
-# OBJS から main.o を除外したテスト用のリストを作成
-TEST_OBJS = $(filter-out $(BUILD_DIR)/main.o, $(OBJS))
-
 
 # 最初にする命令
 # フォルダを作って、すべてコンパイルして、リンクする
@@ -46,12 +38,6 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | make_dirs
 $(TARGET): $(OBJS)
 	$(CC) $(OBJS) -o $(TARGET) -lm
 	@echo ">>> A change was detected and the link was re-linked: $(TARGET)"
-
-# テスト & ビルド
-test: clean make_dirs $(TEST_OBJS)
-	$(CC) $(CFALGS) $(TEST_OBJS) $(TEST_SRCS) -o $(TEST_TARGET) -lm
-	@echo "--- The test code has been built. run the test. ---"
-	./$(TEST_TARGET)
 
 # 生成されたビルド物や実行ファイルを削除するコマンド
 clean:
