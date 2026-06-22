@@ -52,6 +52,7 @@ void forward_embedding(
 }
 
 // 位置エンコーディング
+// サイン・コサイン方式 (絶対位置エンコーディング)
 // 行列 x [SEQ_LEN x EMBED_DIM] に対し、位置エンコーディングを直接足し算する
 void apply_positional_encoding(Matrix *X) {
   int seq_len = X->rows;
