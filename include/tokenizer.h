@@ -1,40 +1,20 @@
 #ifndef TOKENIZER_H
 #define TOKENIZER_H
 
-#define MAX_TOKEN_LEN 32
-// 今回のミニ辞書に登録する単語数
-#define VOCAB_SIZE_NEW 20
+#define MAX_TOKEN_LEN 64 
+// BERTの保持するご語彙数
+#define VOCAB_SIZE_NEW 30522
+// 衝突を避けるため、語彙数 (30522) の約2倍の素数・部屋数を確保
+#define HASH_TABLE_SIZE 65536
 
-// 辞書の単語リスト
-static const char *VOCAB_DICT[VOCAB_SIZE_NEW] = {
-  "[PAD]",       // ID 0
-  "おはよ",     // ID 1
-  "おやすみ",   // ID 2
-  "元気",       // ID 3
-  "？",         // ID 4
-  "！",         // ID 5
-  "うれしい",   // ID 6
-  "かなしい",   // ID 7
-  "バイバイ",   // ID 8
-  "[UNK]",       // ID 9
-  "僕",         // ID 10
-  "君",         // ID 11
-  "空",         // ID 12
-  "星",         // ID 13
-  "見る",       // ID 14
-  "笑う",       // ID 15
-  "歩く",       // ID 16
-  "綺麗",       // ID 17
-  "夜",         // ID 18
-  "静か"        // ID 19
-};
+// ハッシュテーブル初期化関数 (外部の vocab.txtを読み込む)
+int init_tokenizer_hash(const char *vocab_file_path);
 
-// テキスト (スペース区切り) をトークンIDの配列に変換する
-// 例: "おはよ !" -> [1, 5, 0, 0]
+// 外部ファイルからIDに対応する単語文字列を逆引きするための配列ポインタ
+extern char **vocab_reverse_dist;
+
+// トークナイズ・デトークナイズ用の関数
 void tokenize(const char *text, int *output_ids, int seq_len);
-
-// トークンIDの配列を人間の読めるテキストに戻す
-// 例: [1, 5, 0, 0] -> "おはよ ! "
 void detokenize(const int *token_ids, int seq_len, char *output_text);
 
 #endif // TOKENIZER_H
