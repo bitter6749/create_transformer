@@ -243,7 +243,7 @@ void backward_transformer(
   // --- STEP 3: Attention (注意機構) 層の逆伝播 ---
   // ----------------------------------------------
   // MLPから来た誤差 dZ を元に、W_q, W_k, W_v の勾配を計算し、最下流の dX へ流す
-  backward_attention(&dZ, &A_prob, &Q, &K, &V, &X, &model->W_q, &model->W_k, &model->W_v, dW_q, dW_k, dW_v);
+  backward_attention(&dZ, &A_prob, &Q, &K, &V, &X, &model->W_q, &model->W_k, &model->W_v, &dX, dW_q, dW_k, dW_v);
 
   // -------------------------------------------------
   // --- STEP 4: Embedding (単語埋め込み) 層の逆伝播 ---

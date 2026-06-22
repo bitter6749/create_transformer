@@ -37,54 +37,51 @@ void forward_attention(
 }
 
 void backward_attention(
-  const Matrix *dZ,
-  const Matrix *A_prob, 
+  const Matrix *dZ,       // 上流 (MLP) からの誤差 [4 x 16]
+  const Matrix *A_prob,   // 順伝播時のSoftmax出力 [4 x 4]
 
-  const Matrix *Q,
-  const Matrix *K,
-  const Matrix *V,
-  const Matrix *X,
+  const Matrix *Q,        // 順伝播時のQ [4 x 16]
+  const Matrix *K,        // 順伝播時のK [4 x 16]
+  const Matrix *V,        // 順伝播時のV [4 x 16]
+  const Matrix *X,        // 順伝播時の入力特徴量 [4 x 16]
 
-  const Matrix *W_q,
-  const Matrix *W_k,
-  const Matrix *W_v,
+  const Matrix *W_q,      // 重みQ [16 x 16]
+  const Matrix *W_k,      // 重みK [16 x 16]
+  const Matrix *W_v,      // 重みV [16 x 16]
 
-  Matrix *dX,
-  Matrix *dW_q,
-  Matrix *dW_k,
-  Matrix *dW_v
+  Matrix *dX,             // 下流 (Embedding) への誤差 [4 x 16]
+  Matrix *dW_q,           // 重みQの勾配 [16 x 16]
+  Matrix *dW_k,           // 重みKの勾配 [16 x 16]
+  Matrix *dW_v            // 重みVの勾配 [16 x 16]
 ) {
   int seq_len = dZ->rows;
   int embed_dim = Q->cols;
 
   // 各自の中間勾配バッファを確保
-  Matrix dA = create_matrix(seq_len, seq_len);
-  Matrix dS = create_matrix(seq_len, seq_len); // Softmax 前の生スコア勾配
+  Matrix dA = create_matrix(seq_len, seq_len); // [4 x 4]
+  Matrix dS = create_matrix(seq_len, seq_len); // [4 x 4] Softmax 前の生スコア勾配
 
-  Matrix dV = create_matrix(seq_len, embed_dim);
-  Matrix dQ = create_matrix(seq_len, embed_dim);
-  Matrix dK = create_matrix(seq_len, embed_dim);
+  Matrix dQ = create_matrix(seq_len, embed_dim); // [4 x 16]
+  Matrix dK = create_matrix(seq_len, embed_dim); // [4 x 16]
+  Matrix dV = create_matrix(seq_len, embed_dim); // [4 x 16]
 
-  // ==============================
-  // === Step 1: Z = A ・ V の逆伝播
-  // ==============================
-  mat_mul_b_trans(dZ, V, &dA);  // dA = dZ ・ V^T
-  mat_mul_a_trans(A_prob, dZ, &dV);  // dV = A^T ・ dZ
+  Matrix dX_buf = create_matrix(seq_len, embed_dim);  // [4 x 16] 一時的なバッファ
+
+  // ==================================
+  // === Step 1: Z = A ・ V の逆伝播 ===
+  // ==================================
+  // dA = dZ ・ V^T
+  // [4 x 16] * [16 x 4] = [4 x 4]
+  mat_mul_b_trans(dZ, V, &dA);   
+  // dV = A^T ・ dZ
+  // [4 x 4] * [4 x 16] = [4 x 16]
+  mat_mul_a_trans(A_prob, dZ, &dV); 
 
   // ============================================
   // === Step 2: Softmax & スケール調整の逆伝播 ===
   // ============================================
-  for (int i = 0; i < seq_len; i++) {
-    float sum_da_a = 0.0f;
-    for (int k = 0; k < seq_len; k++) {
-      int idx = i *seq_len + k;
-      sum_da_a += dA.data[idx] * A_prob->data[idx];
-    }
-    for (int j = 0; j < seq_len; j++) {
-      int idx = i * seq_len + j;
-      dS.data[idx] = A_prob->data[idx] * (dA.data[idx] - sum_da_a);
-    }
-  }
+  backward_softmax(&dA, A_prob, &dS);
+
 
   // Softmax微分の結果をスケール調整
   float scale = 1.0f / sqrtf(embed_dim);
@@ -99,33 +96,35 @@ void backward_attention(
   // =================================================================
   // === Step 4: Q, K, V = X ・ W の逆伝播 (重みの勾配と入力への勾配) ===
   // =================================================================
-  // Q = X ・ W_q => dW_q = X^T ・ dQ, dX_Q = dQ ・ W_q^T
+
+  // -----------------------------------
+  // --- 1. 重みパラメーターの勾配計算 ---
+  // -----------------------------------
+
+  // Q = X ・ W_q => dW_q = X^T ・ dQ
   mat_mul_a_trans(X, &dQ, dW_q);
-  mat_mul_b_trans(&dQ, W_q, dX); // dX にまずQからの誤差を格納
-
-  // K = X ・ W_k => dW_q = X^T ・ dQ, dX_q = dQ ・ W_q^T
+  // K = X ・ W_k => dW_q = X^T ・ dQ
   mat_mul_a_trans(X, &dK, dW_k);
-  // dX += dK ・ W_k^T
-  Matrix dX_k = create_matrix(seq_len, embed_dim);
-  mat_mul_b_trans(&dK, W_k, &dX_k);
-  for (int i = 0; i < seq_len * embed_dim; i++) {
-    dX->data[i] += dX_k.data[i];
-  }
-
-  // V = X ・ W_v => dW_v = X^T ・ dV, dX_v = dV ・ W_v^T
+  // V = X ・ W_v => dW_v = X^T ・ dV
   mat_mul_a_trans(X, &dV, dW_v);
-  Matrix dX_v = create_matrix(seq_len, embed_dim);
-  mat_mul_b_trans(&dV, W_v, &dX_v);
-  for (int i = 0; i < seq_len * embed_dim; i++) {
-    dX->data[i] += dX_v.data[i];
-  }
+
+  // ----------------------------------------
+  // --- 2. 各ルートから戻る X への誤差計算 ---
+  // ----------------------------------------
   
+  mat_mul_b_trans(&dQ, W_q, dX); // dX_q = dQ ・ W_q^T => dXに格納
+  mat_mul_b_trans(&dK, W_k, &dX_buf); // dX_k = dK ・ W_k^T => dX_buf に格納
+  // dX (dX_q) と　dX_buf (dX_k) の誤差を加算
+  mat_add(dX, &dX_buf, dX); 
+  mat_mul_b_trans(&dV, W_v, &dX_buf); // dX_v += dV ・ W_v^T => dX_buf に格納
+  // dX (dX_q + dX_k) と dX_buf (dX_v) の誤差を加算
+  mat_add(dX, &dX_buf, dX);
+    
   // 一時バッファの解放
   free_matrix(&dA);
   free_matrix(&dQ);
   free_matrix(&dK);
   free_matrix(&dV);
   free_matrix(&dS);
-  free_matrix(&dX_k);
-  free_matrix(&dX_v);
+  free_matrix(&dX_buf);
 }

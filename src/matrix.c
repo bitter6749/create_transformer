@@ -57,6 +57,23 @@ void mat_mul(const Matrix *A, const Matrix *B, Matrix *C) {
   }
 }
 
+// 行列の足し算 C = A + B
+void mat_add(const Matrix *A, const Matrix *B, Matrix *C) {
+  // サイズチェック
+  if (A->rows != B->rows || A->cols != B->cols ||
+      A->rows != C->rows || A->cols != C->cols) {
+
+    fprintf(stderr, "Error: 行列のサイズが不一致です。\n");
+    exit(EXIT_FAILURE);
+  }
+
+  int total_elements = A->rows * A->cols;
+  for (int i = 0; i < total_elements; i++) {
+    C->data[i] = A->data[i] + B->data[i];
+  }
+
+}
+
 // 左側転置の行列掛け算 C = A^T ・ B
 void mat_mul_a_trans(const Matrix *A, const Matrix *B, Matrix *C) {
   // Aは転置されるので、Aの行数とBの行数が一致すべき

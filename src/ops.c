@@ -67,6 +67,46 @@ void softmax_row(Matrix *m, int row) {
   }
 }
 
+void backward_softmax(const Matrix *dA, const Matrix *A, Matrix *dS) {
+  int rows = A->rows;
+  int cols = A->cols;
+
+  // 行ごとにSoftmaxの逆伝播（微分の合流）を計算
+  for (int i = 0; i < rows; i++) {
+
+    /* * 【数学的背景の解説】
+     * Softmax公式: y_i = exp(x_i) / Σ exp(x_k)
+     * * 1つの入力 x_j を動かすと、分母の「総和」を通じてすべての出力 y_1 ~ y_n が変化するため、
+     * チェインルールにより、すべての出力から戻ってきた誤差 dA_i の責任を合計する必要がある。
+     * * 商の微分公式より、x_j に関する微分は以下の2ケースに分かれる:
+     * 1) 自分が分子にいるとき (i == j): ∂y_i / ∂x_i = y_i * (1 - y_i)
+     * 2) 自分が分母にいるとき (i != j): ∂y_i / ∂x_j = -y_i * y_j
+     * * これらをチェインルールで合流させて整理すると、最終的な誤差 dS_j の公式は以下になる:
+     * 上流から戻ってきた誤差を dA_i、求めたいSoftmax前の生スコアへの誤差を dS_j とします。
+     * dS_j = y_j * ( dA_j - Σ (dA_i * y_i) )
+     * * つまり、「自分の上流誤差(dA_j)」と「全体の誤差の期待値(Σ dA_i * y_i)」の
+     * 差分（どれだけ平均より突出してズレているか）に対して、自分の存在感（y_j）を掛け算する。
+     * 
+     * y_i => A_prob.data[idx] (順伝播のSoftmax出力確率)
+     * dA_i => dA.data[idx]    (上流からの誤差)
+     * dS_j => dS.data[idx]    (求める生のスコアの誤差)
+     */
+
+    // 1. 公式の右側にある「誤差の期待値（総和部分）」を先に計算: sum_da_a = Σ (dA_i * y_i)
+    float sum_da_a = 0.0f;
+    for (int k = 0; k < cols; k++) {
+      int idx = i * cols + k;
+      sum_da_a += dA->data[idx] * A->data[idx];
+    }
+    
+    // 2. 公式の外側を掛け算して下流への誤差を確定: dS_j = y_j * (dA_j - sum_da_a)
+    for (int j = 0; j < cols; j++) {
+      int idx = i * cols + j;
+      dS->data[idx] = A->data[idx] * (dA->data[idx] - sum_da_a);
+    }
+  }
+}
+
 void relu(Matrix *m) {
   int total_elemnts = m->rows * m->cols;
   for (int i = 0; i < total_elemnts; i++) {
