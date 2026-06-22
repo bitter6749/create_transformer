@@ -38,6 +38,8 @@ void backward_transformer(
 
   // 各層の重み・バイアスの勾配
   Matrix *dW_out,
+  Matrix *dln1_gamma, Matrix *dln1_beta,
+  Matrix *dln2_gamma, Matrix *dln2_beta,
   Matrix *dW1, Matrix *db1, Matrix *dW2, Matrix *db2, 
   Matrix *dW_q, Matrix *dW_k, Matrix *dW_v
 );

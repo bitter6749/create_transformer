@@ -181,12 +181,6 @@ void backward_layernorm(
   int cols = X->cols;
   float eps = 1e-5f;
 
-  // 勾配の初期化 (dgamma, dbeta は複数のトークン行から足し算で蓄積されるため)
-  for (int j = 0; j < cols; j++) {
-    dgamma->data[j] = 0.0f;
-    dbeta->data[j] = 0.0f;
-  }
-
   for (int i = 0; i < rows; i++) {
     // 順伝播の平均と分散を再計算
     float sum = 0.0f;

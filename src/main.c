@@ -103,13 +103,28 @@ int main() {
   Matrix output_probabilities = create_matrix(1, VOCAB_SIZE);
 
   // ハイパーパラメータ
-  float learning_rate = 0.1f; // 学習率 (lr)
-  int epochs = 100;           // 100回繰り返し学習する
+  float learning_rate = 0.25f; // 学習率 (lr)
+  int epochs = 600;           // 100回繰り返し学習する
 
   printf("=== Transformerの学習を開始します ===\n");
 
   // 4. トレーニングループ
   for (int epoch = 1; epoch <= epochs; epoch++) {
+    // 新しいエポックの計算を始める前に、すべての勾配箱の中身を 0.0f にクリアする
+    for (int i = 0; i < dW_out.rows * dW_out.cols; i++) dW_out.data[i] = 0.0f;
+    for (int l = 0; l < NUM_LAYERS; l++) {
+      for (int i = 0; i < dln1_gamma[l].rows * dln1_gamma[l].cols; i++) {
+        dln1_gamma[l].data[i] = 0.0f; dln1_beta[l].data[i] = 0.0f;
+        dln2_gamma[l].data[i] = 0.0f; dln2_beta[l].data[i] = 0.0f;
+      }
+      for (int i = 0; i < dW_q[l].rows * dW_q[l].cols; i++) dW_q[l].data[i] = 0.0f;
+      for (int i = 0; i < dW_k[l].rows * dW_k[l].cols; i++) dW_k[l].data[i] = 0.0f;
+      for (int i = 0; i < dW_v[l].rows * dW_v[l].cols; i++) dW_v[l].data[i] = 0.0f;
+      for (int i = 0; i < dW1[l].rows * dW1[l].cols; i++)   dW1[l].data[i] = 0.0f;
+      for (int i = 0; i < db1[l].rows * db1[l].cols; i++)   db1[l].data[i] = 0.0f;
+      for (int i = 0; i < dW2[l].rows * dW2[l].cols; i++)   dW2[l].data[i] = 0.0f;
+      for (int i = 0; i < db2[l].rows * db2[l].cols; i++)   db2[l].data[i] = 0.0f;
+    }
 
     // STEP 4-1: 逆伝播関数を呼び出し、全レイヤーの勾配を計算
     backward_transformer(

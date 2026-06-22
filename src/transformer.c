@@ -47,18 +47,21 @@ void forward_transformer(
     const int *input_ids, 
     Matrix *output_probabilities
 ) {
-  // ==================================================
-  // === STEP 1. 各種一時ワークスペース (ヒープに確保) ===
-  // ==================================================
-  // X: 入力文字をベクトル化したもの [SEQ_LEN x EMBED_DIM]
-  //
-  //      { x0,0 x0,1 ... x0,15 }  <- 一文字目 'c' のベクトル
-  //      { x1,0 x1,1 ... x1,15 }  <- 二文字目 'a' のベクトル
-  // X =  |                     |
-  //      { x2,0 x2,1 ... x2,15 }  <- 三文字目 't' のベクトル
-  //      { x3,0 x3,1 ... x3,15 }  <- 四文字目 ' ' のベクトル
+  
+  // X: 現在の状態を保持するメインストリーム行列 [SEQ_LEN x EMBED_DIM]
   Matrix X = create_matrix(SEQ_LEN, EMBED_DIM);
+  // 埋め込み層 (Embedding Lookup)
+  forward_embedding(
+    input_ids, 
+    SEQ_LEN, EMBED_DIM, 
+    &model->token_embedding, 
+    &X
+  );
+  // 位置エンコーディング
+  apply_positional_encoding(&X);
 
+  // 各層の計算用一時バッファ
+  Matrix X_norm = create_matrix(SEQ_LEN, EMBED_DIM);
   // Q, K, V ベクトル
   Matrix Q = create_matrix(SEQ_LEN, EMBED_DIM); // Q: クエリ
   Matrix K = create_matrix(SEQ_LEN, EMBED_DIM); // K: キュー
@@ -71,65 +74,43 @@ void forward_transformer(
   // Y_mlp: MLP の最終出力 [SEQ_LEN x EMBED_DIM]
   Matrix Y_mlp = create_matrix(SEQ_LEN, EMBED_DIM);
 
-  // ================================================
-  // === STEP 2: Embedding (文字IDをベクトルに変換) ===
-  // ================================================
-  // 埋め込み層 (Embedding Lookup)
-  forward_embedding(
-    input_ids, 
-    SEQ_LEN, EMBED_DIM, 
-    &model->token_embedding, 
-    &X
-  );
+  for (int l = 0; l < NUM_LAYERS; l++) {
+    // --- 1. Pre-LayerNorm -> Attention => 残差接続 ---
+    forward_layernom(&X, &model->ln1_gamma[l], &model->ln1_beta[l], &X_norm);
+    forward_attention(
+      &X_norm,
+      &model->W_q[l], &model->W_k[l], &model->W_v[l],
+      &Q, &K, &V,
+      &A_prob,
+      &Z
+    );
+    mat_add(&X, &Z, &X); // 残差接続: X = X + Attention(LN(X))
 
-  // 位置エンコーディング
-  apply_positional_encoding(&X);
+    // --- 2. Pre-LayerNorm -> MLP -> 残差接続 ---
+    forward_layernom(&X, &model->ln2_gamma[l], &model->ln2_beta[l], &X_norm);
+    forward_mlp(
+      &X_norm,
+      &model->W1[l],
+      &model->b1[l],
+      &model->W2[l],
+      &model->b2[l],
+      &model->H[l],
+      &Y_mlp
+    );
+    mat_add(&X, &Y_mlp, &X); // 残差接続: X = X + MLP(LN(X))
+  } 
 
-  // ==============================================
-  // === STEP 3: Attention (注意機構) の 呼び出し ===
-  // ===============================================
-  //        { A0,0 A0,1 A0,2 A0,3 } <- 'c' から見た各文字への注目度
-  //        { A1,0 A1,1 A1,2 A1,3 } <- 'a' から見た各文字への注目度
-  //  A =   |                     |
-  //        { A2,0 A2,1 A2,2 A2,3 } <- 't' から見た各文字への注目度
-  //        { A3,0 A3,1 A3,2 A3,3 } <- ' ' から見た各文字への注目度
-  // 3. 注意機構層 (Attention Layer)
-  forward_attention(
-    &X,
-    &model->W_q, &model->W_k, &model->W_v,
-    &Q, &K, &V,
-    &A_prob,
-    &Z
-  );
-
-  // ======================================================
-  // === STEP 4: MLP(多層パーセプトロン)層の呼び出しを追加 ===
-  // ======================================================
-  // Attention の出力 Z を入力とし、結果を Y_mlp に格納する
-  // 4. 前向型全結合層 (MLP / Feed-Forward Layer)
-  forward_mlp(
-    &Z,
-    &model->W1,
-    &model->b1,
-    &model->W2,
-    &model->b2,
-    &model->H,
-    &Y_mlp
-  );
-
-  // ====================================================
-  // === STEP 5: 出力層 (最後の文字の予想結果だけを使う) ===
-  // ====================================================
   // 5. 出力層 (LM Head)
-  forward_lm_head(&Y_mlp, &model->W_out, output_probabilities);
+  forward_lm_head(&X, &model->W_out, output_probabilities);
 
-  // ==================================
   // === STEP 5: ワークスペースの解放 ===
-  // ==================================
-  free_matrix(&X);
+  free_matrix(&X); 
+  free_matrix(&X_norm);
+
   free_matrix(&Q);
   free_matrix(&K);
   free_matrix(&V);
+
   free_matrix(&A_prob);
   free_matrix(&Z);
   free_matrix(&Y_mlp);
@@ -196,77 +177,144 @@ void backward_transformer(
 
   // 各層の重み・バイアスの勾配
   Matrix *dW_out,
+  Matrix *dln1_gamma, Matrix *dln1_beta,
+  Matrix *dln2_gamma, Matrix *dln2_beta,
   Matrix *dW1, Matrix *db1, Matrix *dW2, Matrix *db2, 
   Matrix *dW_q, Matrix *dW_k, Matrix *dW_v
 ) {
-  // ====================================================
-  // 逆伝播の計算には、順伝播時の「途中経過の行列の値」が必要
-  // forwardを走らせて、各種中間バッファを揃える
-  //（X, Q, K, V, A_prob, Z, Y_mlp, output_probabilities）
-  // ====================================================
-  Matrix X        = create_matrix(SEQ_LEN, EMBED_DIM);
-  Matrix Q        = create_matrix(SEQ_LEN, EMBED_DIM);
-  Matrix K        = create_matrix(SEQ_LEN, EMBED_DIM);
-  Matrix V        = create_matrix(SEQ_LEN, EMBED_DIM);
-  Matrix A_prob   = create_matrix(SEQ_LEN, SEQ_LEN);
-  Matrix Z        = create_matrix(SEQ_LEN, EMBED_DIM);
-  Matrix Y_mlp    = create_matrix(SEQ_LEN, EMBED_DIM);
-  Matrix output_probabilities    = create_matrix(1, VOCAB_SIZE);
+  // ==========================================================
+  // 1. 各レイヤーの「逆伝播の計算直前」の正確な状態を保持するための
+  //    タイムマシン用履歴バッファを、配列として確保します。
+  // ==========================================================
+  Matrix X_history[NUM_LAYERS + 1]; // 各層の入り口の X
+  Matrix X_norm1_history[NUM_LAYERS];
+  Matrix Q_history[NUM_LAYERS];
+  Matrix K_history[NUM_LAYERS];
+  Matrix V_history[NUM_LAYERS];
+  Matrix A_prob_history[NUM_LAYERS];
+  Matrix Z_history[NUM_LAYERS];
+  Matrix X_mid_history[NUM_LAYERS];   // Attention足し算後の X
+  Matrix X_norm2_history[NUM_LAYERS];
+  Matrix Y_mlp_history[NUM_LAYERS];
 
-  // =============================================
-  // 1. 順伝播を計算して中間データをバッファに格納する
-  // =============================================
-  forward_embedding(input_ids, SEQ_LEN, EMBED_DIM, &model->token_embedding, &X);
-  apply_positional_encoding(&X);
-  forward_attention(&X, &model->W_q, &model->W_k, &model->W_v, &Q, &K, &V, &A_prob, &Z);
-  forward_mlp(&Z, &model->W1, &model->b1, &model->W2, &model->b2, &model->H, &Y_mlp);
-  forward_lm_head(&Y_mlp, &model->W_out, &output_probabilities);
+  for (int l = 0; l <= NUM_LAYERS; l++) X_history[l] = create_matrix(SEQ_LEN, EMBED_DIM);
+  for (int l = 0; l < NUM_LAYERS; l++) {
+    X_norm1_history[l] = create_matrix(SEQ_LEN, EMBED_DIM);
+    Q_history[l]       = create_matrix(SEQ_LEN, EMBED_DIM);
+    K_history[l]       = create_matrix(SEQ_LEN, EMBED_DIM);
+    V_history[l]       = create_matrix(SEQ_LEN, EMBED_DIM);
+    A_prob_history[l]  = create_matrix(SEQ_LEN, SEQ_LEN);
+    Z_history[l]       = create_matrix(SEQ_LEN, EMBED_DIM);
+    X_mid_history[l]   = create_matrix(SEQ_LEN, EMBED_DIM);
+    X_norm2_history[l] = create_matrix(SEQ_LEN, EMBED_DIM);
+    Y_mlp_history[l]   = create_matrix(SEQ_LEN, EMBED_DIM);
+  }
+  Matrix output_probabilities = create_matrix(1, VOCAB_SIZE);
+
+  // 履歴バッファに順伝播の前期積を記録
+  forward_embedding(input_ids, SEQ_LEN, EMBED_DIM, &model->token_embedding, &X_history[0]);
+  apply_positional_encoding(&X_history[0]);
+
+  for (int l = 0; l < NUM_LAYERS; l++) {
+    forward_layernom(&X_history[l], &model->ln1_gamma[l], &model->ln1_beta[l], &X_norm1_history[l]);
+    forward_attention(
+      &X_norm1_history[l], 
+      &model->W_q[l], &model->W_k[l], &model->W_v[l], 
+      &Q_history[l], &K_history[l], &V_history[l], 
+      &A_prob_history[l], &Z_history[l]
+    );
+    mat_add(&X_history[l], &Z_history[l], &X_mid_history[l]);
+
+    forward_layernom(&X_mid_history[l], &model->ln2_gamma[l], &model->ln2_beta[l], &X_norm2_history[l]);
+    forward_mlp(
+      &X_norm2_history[l], 
+      &model->W1[l], &model->b1[l], 
+      &model->W2[l], &model->b2[l], 
+      &model->H[l], &Y_mlp_history[l]
+    );
+    mat_add(&X_mid_history[l], &Y_mlp_history[l], &X_history[l + 1]);
+  }
+  forward_lm_head(&X_history[NUM_LAYERS], &model->W_out, &output_probabilities);
 
   // =======================================
-  // 2. 実際に逆伝播を行う ( 出力層 -> 入力層 )
+  // 2. 逆伝播の実行 ( 出力層 -> 入力層 )
   // ========================================
+  Matrix dX_stream = create_matrix(SEQ_LEN, EMBED_DIM); // 誤差が逆流するメインストリーム
 
-  // 各層を流れる誤差(勾配)を受け渡すためのバッファ
-  Matrix dY_mlp = create_matrix(SEQ_LEN, EMBED_DIM); // 出力層からMLPへ流れる誤差
-  Matrix dZ     = create_matrix(SEQ_LEN, EMBED_DIM); // MLPからAttentionへ流れる誤差
-  Matrix dX     = create_matrix(SEQ_LEN, EMBED_DIM); // AttentionからEmbeddingへ流れる誤差
+  // 出力層の逆伝播
+  backward_lm_head(&output_probabilities, target_id, &X_history[NUM_LAYERS], &model->W_out, &dX_stream, dW_out);
 
-  // -----------------------------
-  // --- STEP 1: 出力層の逆伝播 ---
-  // -----------------------------
-  // 最終出力の確率分布と正解ID (target_id) から誤差を計算し、dY_mlp と dW_out を求める
-  backward_lm_head(&output_probabilities, target_id, &Y_mlp, &model->W_out, &dY_mlp, dW_out);
+  // 各ブロックの一時誤差バッファ
+  Matrix dBlock_out = create_matrix(SEQ_LEN, EMBED_DIM);
+  Matrix dLN_in     = create_matrix(SEQ_LEN, EMBED_DIM);
 
-  // ----------------------------------------------
-  // --- STEP 2: MLP(多層パーセプトロン)層の逆伝播 ---
-  // -----------------------------------------------
-  // 出力層から来た誤差 dY_mlp を元に、 W1, b1, W2, b2 の勾配を計算し、下流の dZ へ流す
-  backward_mlp(&dY_mlp, &Z, &model->W1, &model->H, &model->W2, &dZ, dW1, db1, dW2, db2);
+  // NUM_LAYERS から 0 に向かって、逆順に誤差を逆流させる
+  for (int l = NUM_LAYERS - 1; l >= 0; l--) {
+    // 2. MLP ブロックの逆伝播
+    // 残差接続の微分は、定数なので無視
+    // メインストリームの誤差 dX_stream が、そのまま MLP への誤差 (dBlock_out) になる
+    for (int i = 0; i < SEQ_LEN * EMBED_DIM; i++) dBlock_out.data[i] = dX_stream.data[i];
 
-  // ---------------------------------------------
-  // --- STEP 3: Attention (注意機構) 層の逆伝播 ---
-  // ----------------------------------------------
-  // MLPから来た誤差 dZ を元に、W_q, W_k, W_v の勾配を計算し、最下流の dX へ流す
-  backward_attention(&dZ, &A_prob, &Q, &K, &V, &X, &model->W_q, &model->W_k, &model->W_v, &dX, dW_q, dW_k, dW_v);
+    // MLP 本体の逆伝播
+    backward_mlp(
+      &dBlock_out, 
+      &X_norm2_history[l], 
+      &model->W1[l], 
+      &model->H[l], 
+      &model->W2[l],
+      &dLN_in, &dW1[l], 
+      &db1[l], &dW2[l], &db2[l]
+    );
+    
+    // LayerNorm の逆伝播
+    backward_layernorm(
+      &dLN_in,
+      &X_mid_history[l],
+      &model->ln2_gamma[l], 
+      &dBlock_out, &dln2_gamma[l], &dln2_beta[l]
+    );
 
-  // -------------------------------------------------
-  // --- STEP 4: Embedding (単語埋め込み) 層の逆伝播 ---
-  // -------------------------------------------------
-  // 最下流に届いた dX を使って、今回入力された文字の埋め込みパラメーターを修正する
-  backward_embedding(&dX, input_ids, SEQ_LEN, EMBED_DIM, &model->token_embedding);
+    // メインストリームへの合流
+    mat_add(&dX_stream, &dBlock_out, &dX_stream);
+
+    // Attention ブロックの逆伝播
+    for (int i = 0; i < SEQ_LEN * EMBED_DIM; i++) dBlock_out.data[i] = dX_stream.data[i];
+
+    // Attention 本体の逆伝播
+    backward_attention(
+      &dBlock_out, &A_prob_history[l], 
+      &Q_history[l], &K_history[l], &V_history[l], 
+      &X_norm1_history[l], 
+      &model->W_q[l], &model->W_k[l], &model->W_v[l], 
+      &dLN_in, &dW_q[l], &dW_k[l], &dW_v[l]
+    );
+
+    // LayerNorm の逆伝播
+    backward_layernorm(
+      &dLN_in,
+      &X_history[l],
+      &model->ln1_gamma[l], 
+      &dBlock_out, &dln1_gamma[l], &dln1_beta[l]
+    );
+
+    // メインストリームへの合流
+    mat_add(&dX_stream, &dBlock_out, &dX_stream);
+  }
+
+  // 最下流に届いた dX_stream を使って、Embedding を更新
+  backward_embedding(&dX_stream, input_ids, SEQ_LEN, EMBED_DIM, &model->token_embedding);
 
   // =======================
   // 3. バッファ(メモリ)の解放
   // =======================
-  free_matrix(&X);
-  free_matrix(&Q);
-  free_matrix(&K);
-  free_matrix(&V);
-  free_matrix(&A_prob);
-  free_matrix(&Z);
-  free_matrix(&Y_mlp);
+  for (int l = 0; l <= NUM_LAYERS; l++) free_matrix(&X_history[l]);
+    for (int l = 0; l < NUM_LAYERS; l++) {
+      free_matrix(&X_norm1_history[l]); free_matrix(&Q_history[l]); free_matrix(&K_history[l]);
+      free_matrix(&V_history[l]);       free_matrix(&A_prob_history[l]); free_matrix(&Z_history[l]);
+      free_matrix(&X_mid_history[l]);   free_matrix(&X_norm2_history[l]); free_matrix(&Y_mlp_history[l]);
+    }
   free_matrix(&output_probabilities);
-  free_matrix(&dY_mlp);
-  free_matrix(&dZ);
-  free_matrix(&dX);
+  free_matrix(&dX_stream);
+  free_matrix(&dBlock_out);
+  free_matrix(&dLN_in);
 }
