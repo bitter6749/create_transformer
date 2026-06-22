@@ -231,13 +231,13 @@ void backward_transformer(
   // --- STEP 1: 出力層の逆伝播 ---
   // -----------------------------
   // 最終出力の確率分布と正解ID (target_id) から誤差を計算し、dY_mlp と dW_out を求める
-  backward_lm_head(&output_probabilities, target_id, &Y_mlp, &model->W_out, &Y_mlp, dW_out);
+  backward_lm_head(&output_probabilities, target_id, &Y_mlp, &model->W_out, &dY_mlp, dW_out);
 
   // ----------------------------------------------
   // --- STEP 2: MLP(多層パーセプトロン)層の逆伝播 ---
   // -----------------------------------------------
   // 出力層から来た誤差 dY_mlp を元に、 W1, b1, W2, b2 の勾配を計算し、下流の dZ へ流す
-  backward_mlp(&Y_mlp, &Z, &dZ, &model->H, &model->W1, &model->W2, dW1, db1, dW2, db2);
+  backward_mlp(&Y_mlp, &Z, &model->W1, &model->H, &model->W2, &dZ, dW1, db1, dW2, db2);
 
   // ---------------------------------------------
   // --- STEP 3: Attention (注意機構) 層の逆伝播 ---
