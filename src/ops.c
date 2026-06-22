@@ -75,3 +75,17 @@ void relu(Matrix *m) {
     }
   }
 }
+
+void backward_relu(const Matrix *dOut, const Matrix *Out, Matrix *dIn) {
+  int total_elements = Out->rows * Out->cols;
+
+  for (int i = 0; i < total_elements; i++) {
+    // 順伝播の出力が 0 より大きければ誤差をそのまま流す
+    if (Out->data[i] > 0.0f) {
+      dIn->data[i] = dOut->data[i];
+    } else {
+      // 0 以下なら下流への誤差は 0 になる
+      dIn->data[i] = 0.0f;
+    }
+  } 
+}
