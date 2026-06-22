@@ -6,23 +6,48 @@
 #include "mlp.h"
 #include "ops.h"
 
-
+// 指定した範囲 (-scale から +scale) のランダムな少数を生成する関数
+float rand_weight(float scale) {
+  // 0.0 ~ 1.0 の乱数を作り、-1.0 ~ 1.0 に変換してから scale をかける
+  float r = ((float)rand() / (float)RAND_MAX);
+  return (r * 2.0f - 1.0f) * scale;
+}
 
 int main() {
+  // seed を固定 (実行するたび同じ値になるようにする)
+  srand(42);
+
   // 1. モデルの宣言とメモリ確保
   SimpleTransformer model;
   init_model(&model);
 
-  // すべての値に適当初期値を入れる
-  for (int i=0; i < VOCAB_SIZE * EMBED_DIM; i++) model.token_embedding.data[i] = 0.1f;
-  for (int i=0; i < EMBED_DIM * EMBED_DIM; i++) {
-    model.W_q.data[i] = 0.05f;
-    model.W_k.data[i] = 0.05f;
-    model.W_v.data[i] = 0.05f;
+  // ==============================================
+  //  すべての重みとバイアスをランダムな値で初期化する
+  // ==============================================
+
+  // 埋め込み(Embedding)層
+  for (int i=0; i < model.token_embedding.rows * model.token_embedding.cols; i++) {
+    model.token_embedding.data[i] = rand_weight(0.1f);
   }
-  for (int i=0; i < EMBED_DIM * MLP_HIDDEN_DIM; i++) model.W1.data[i] = 0.02f;
-  for (int i=0; i < MLP_HIDDEN_DIM * EMBED_DIM; i++) model.W2.data[i] = 0.02f;
-  for (int i=0; i < VOCAB_SIZE * EMBED_DIM; i++) model.W_out.data[i] = 0.1f;
+
+  // Attention層
+  for (int i=0; i < model.W_q.rows * model.W_q.cols; i++) {
+    model.W_q.data[i] = rand_weight(0.05f);
+    model.W_k.data[i] = rand_weight(0.05f);
+    model.W_v.data[i] = rand_weight(0.05f);
+  }
+
+  // MLP層
+  for (int i=0; i < model.W1.rows * model.W1.cols; i++) model.W1.data[i] = rand_weight(0.05f);
+  for (int i=0; i < model.b1.rows * model.b1.cols; i++) model.b1.data[i] = 0.0f;
+
+  for (int i=0; i < model.W2.rows * model.W2.cols; i++) model.W2.data[i] = rand_weight(0.05f);
+  for (int i=0; i < model.b2.rows * model.b2.cols; i++) model.b2.data[i] = 0.0f;
+  
+  // 出力層
+  for (int i=0; i < model.W_out.rows * model.W_out.cols; i++) {
+    model.W_out.data[i] = rand_weight(0.1f);
+  }
 
   // 2. 入力データ ("cat " を表すIDの配列)
   // c=2, a=0, t=19, space=26

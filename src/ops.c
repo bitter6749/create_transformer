@@ -102,7 +102,7 @@ void backward_embedding (
     for (int d = 0; d < embed_dim; d++) {
       // One-Hot 行列との積
       // 大量の 0 との掛け算を省くためにインデックスを指定して加算
-      embedding_table->data[id * embed_dim + d] += dX ->data[t * embed_dim + d];
+      embedding_table->data[id * embed_dim + d] += dX->data[t * embed_dim + d];
     }
   }
 }
