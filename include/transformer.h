@@ -24,6 +24,17 @@ void forward_transformer(
   Matrix *output_probabilities
 );
 
+// 出力層の逆伝播
+// 最終出力の確率分布と正解ID (target_id) から誤差を計算し、dY_mlp と dW_out を求める
+void backward_lm_head(
+  const Matrix *output_probabilities, // [1 x VOCAB_SIZE]
+  int target_id,
+  const Matrix *Y_mlp,                // [SEQ_LEN x EMBED_DIM]
+  const Matrix *W_out,                // [EMBED_DIM x VOCAB_SIZE]
+  Matrix *dY_mlp,                     // [SEQ_LEN x EMBED_DIM] (下流へ流す誤差)
+  Matrix *dW_out                      // [EMBED_DIM x VOCAB_SIZE] (重みの勾配)
+);
+
 // モデル全体の逆伝播 (各層の backward を順番に呼ぶ)
 void backward_transformer(
   SimpleTransformer *model,

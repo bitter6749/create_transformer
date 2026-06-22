@@ -132,6 +132,57 @@ void forward_transformer(
   free_matrix(&Y_mlp);
 }
 
+// ====================
+// === 出力層の逆伝播 ===
+// ====================
+// 最終出力の確率分布と正解ID (target_id) から誤差を計算し、dY_mlp と dW_out を求める
+void backward_lm_head(
+  const Matrix *output_probabilities, // [1 x VOCAB_SIZE]
+  int target_id,
+  const Matrix *Y_mlp,                // [SEQ_LEN x EMBED_DIM]
+  const Matrix *W_out,                // [EMBED_DIM x VOCAB_SIZE]
+  Matrix *dY_mlp,                     // [SEQ_LEN x EMBED_DIM] (下流へ流す誤差)
+  Matrix *dW_out                      // [EMBED_DIM x VOCAB_SIZE] (重みの勾配)
+) {
+  int seq_len = Y_mlp->rows;
+  int embed_dim = Y_mlp->cols;
+
+  // 1. Softmax + Cross Entropy の微分を計算
+  // Softmax と Cross Entropy の損失関数の微分は、
+  // (予測確率 - 正解ラベル) になる
+  // 正解ラベルは確率の最大値 1 になる
+  Matrix dOutput_Linear = create_matrix(1, VOCAB_SIZE);
+  for (int i = 0; i < VOCAB_SIZE; i++) {
+    dOutput_Linear.data[i] = output_probabilities->data[i];
+  }
+  dOutput_Linear.data[target_id] -= 1.0f; // (予測確率 - 正解ラベル )
+
+  // 2. 順伝播の時と同じく、最後のトークン(SEQ_LEN - 1)の特徴量を抽出
+  Matrix last_z = create_matrix(1, embed_dim);
+  extract_row(Y_mlp, seq_len - 1, &last_z);
+
+  // 3. 重み W_out への勾配を計算: 
+  // dW_out = last_z^T ・ dOutput_Linear
+  // [EMBED_DIM x 1] * [1 x VOCAB_SIZE] = [EMBED_DIM x VOCAB_SIZE]
+  mat_mul_a_trans(&last_z, &dOutput_Linear, dW_out);
+
+  // 4. 特徴量 (last_z) への誤差を計算: 
+  // dLast_z = dOutput_Linear ・ W_out^T
+  // [1 x VOCAB_SIZE] * [VOCAB_SIZE x EMBED_DIM] = [1 x EMBED_DIM]
+  Matrix dLast_z = create_matrix(1, embed_dim);
+  mat_mul_b_trans(&dOutput_Linear, W_out, &dLast_z);
+
+  // 5. 全体の誤差行列 dY_mlp の最後の行に、計算した誤差を書き戻す
+  for (int j = 0; j < embed_dim; j++) {
+    dY_mlp->data[(seq_len - 1) * embed_dim + j] = dLast_z.data[j];
+  }
+
+  // ワークスペースの解放
+  free_matrix(&dOutput_Linear);
+  free_matrix(&last_z);
+  free_matrix(&dLast_z);
+}
+
 // ========================
 // === モデル全体の逆伝播 ===
 // ========================
