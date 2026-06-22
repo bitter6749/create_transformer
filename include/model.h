@@ -2,12 +2,13 @@
 #define MODEL_H
 
 #include "matrix.h"
+#include "tokenizer.h"
 
 // =====================================
 // === ハイパーパラメーターのマクロ定義 ===
 // =====================================
 
-#define VOCAB_SIZE 27 // a~z + space
+#define VOCAB_SIZE VOCAB_SIZE_NEW // 10単語
 #define SEQ_LEN    4  // 入力する文字数(例: "cat " の四文字)
 #define EMBED_DIM  16  // 文字を表現するベクトルの次元数 (RNN の HIDDENに相当)
 
