@@ -33,7 +33,7 @@ int load_and_tokenize_file(const char *filename, int *tokens_out, int max_tokens
 
     // 辞書と総当たりで比較してIDに変換
     for (int id = 0; id < VOCAB_SIZE_NEW; id++) {
-      if (strcmp(word, VOCAB_DICT[id]) == 0) {
+      if (strcmp(word, vocab_reverse_dict[id]) == 0) {
         matched_id = id;
         break;
       }
@@ -49,6 +49,11 @@ int load_and_tokenize_file(const char *filename, int *tokens_out, int max_tokens
 int main() {
   // seed を固定 (実行するたび同じ値になるようにする)
   srand(42);
+
+  // 外部ファイルを読み込んでハッシュテーブルを構築 
+  if (!init_tokenizer_hash("vocab.txt")) {
+    return EXIT_FAILURE;
+  }
 
   // 1. モデルの宣言とメモリ確保
   SimpleTransformer model;
@@ -95,17 +100,45 @@ int main() {
     model.W_out.data[i] = rand_weight(0.1f);
   }
 
-  // 2. 外部小説テキストファイルの読み込み
-  int full_tokens[1000];  // 最大1000単語まで対応するバッファ
-  int total_words = load_and_tokenize_file("novel.txt", full_tokens, 1000);
-
-  if (total_words < 2) {
-    fprintf(stderr, "Error: 小説データの単語数が足りないか、ファイルが空です。終了します。\n");
+  // 2. テキストファイルを読み込んでメモリ上でトークナイズ
+  FILE *f_txt = fopen("data_input_3.txt", "r");
+  if (f_txt == NULL) {
+    fprintf(stderr, "Error: 'data_input.txt' が見つかりません。テキストファイルを用意してください。\n");
     free_model(&model);
     return EXIT_FAILURE;
   }
-  printf(">>> 小説ファイル 'novel.txt' から %d 単語を読み込みました。\n", total_words);
 
+  // ファイルサイズを計測して動的にバッファを確保
+  fseek(f_txt, 0, SEEK_END);
+  long file_size = ftell(f_txt);
+  fseek(f_txt, 0, SEEK_SET);
+
+  char *raw_text = (char *)malloc(file_size + 1);
+  size_t read_bytes = fread(raw_text, 1, file_size, f_txt);
+  raw_text[read_bytes] = '\0';
+  fclose(f_txt);
+
+  // トークンを格納する十分な大きさの配列を確保（文字数より多くなることはない）
+  int *full_tokens = (int *)malloc(sizeof(int) * read_bytes);
+  
+  // 配列全体を処理するため、一時的に巨大なseq_lenとしてtokenizeを呼び出す
+  printf(">>> ハッシュテーブルを使用してリアルタイムWordPieceトークナイズを実行中...\n");
+
+  // 実際に詰め込まれた有効なトークン数をカウント
+  int total_words = tokenize(raw_text, full_tokens, read_bytes);
+  free(raw_text); // 原文テキストバッファはもう不要なので解放
+
+  printf(">>> WordPiece分解完了: 総トークン数 %d 個をメモリに展開しました。\n", total_words);
+
+  if (total_words < SEQ_LEN + 1) {
+    fprintf(stderr, "Error: トークン数が少なすぎます。終了します。\n");
+    free(full_tokens);
+    free_model(&model);
+    return EXIT_FAILURE;
+  }
+
+
+  
   // 3. 勾配 (グラジエント) を格納するためのバッファを確保 (モデルの重みとまったく同じサイズ)
   Matrix dW_out = create_matrix(EMBED_DIM, VOCAB_SIZE);
 
@@ -216,9 +249,7 @@ int main() {
       step_count++;
     }
 
-    if (epoch == 1 || epoch % 20 == 0) {
-      printf("Epoch %3d: 平均Loss(文章の予測しづらさ): %.4f\n", epoch, epoch_loss_sum / (float)step_count);
-    }
+    printf("Epoch %3d: 平均Loss(文章の予測しづらさ): %.4f\n", epoch, epoch_loss_sum / (float)step_count);
   }
 
   printf("=== 学習完了 ===\n");
@@ -245,6 +276,14 @@ int main() {
 
     free_matrix(&dW2[l]);
     free_matrix(&db2[l]);
+  }
+
+  // ハッシュテーブルの逆引き辞書メモリを解放
+  if (vocab_reverse_dict != NULL) {
+    for (int i = 0; i < VOCAB_SIZE_NEW; i++) {
+      free(vocab_reverse_dict[i]);
+    }
+    free(vocab_reverse_dict);
   }
 
   return 0;

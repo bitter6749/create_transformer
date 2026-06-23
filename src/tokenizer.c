@@ -14,7 +14,7 @@ typedef struct {
 static HashEntry hash_table[HASH_TABLE_SIZE];
 
 // IDから文字列を逆引きするための動的配列
-char **vocab_reverse_dist = NULL;
+char **vocab_reverse_dict = NULL;
 
 // 文字列ハッシュ関数 (DJB2)
 static unsigned long djb2_hash(const char *str) {
@@ -72,9 +72,9 @@ int init_tokenizer_hash(const char *vocab_file_path) {
     }
 
     // 逆引き用配列のメモリ確保
-    vocab_reverse_dist = (char **)malloc(sizeof(char *) * VOCAB_SIZE_NEW);
+    vocab_reverse_dict = (char **)malloc(sizeof(char *) * VOCAB_SIZE_NEW);
     for (int i = 0; i < VOCAB_SIZE_NEW; i++) {
-        vocab_reverse_dist[i] = (char *)malloc(sizeof(char) * MAX_TOKEN_LEN);
+        vocab_reverse_dict[i] = (char *)malloc(sizeof(char) * MAX_TOKEN_LEN);
     }
 
     char line[MAX_TOKEN_LEN];
@@ -87,48 +87,108 @@ int init_tokenizer_hash(const char *vocab_file_path) {
 
         if (strlen(line) > 0) {
             insert_hash(line, id);
-            strncpy(vocab_reverse_dist[id], line, MAX_TOKEN_LEN - 1);
+            strncpy(vocab_reverse_dict[id], line, MAX_TOKEN_LEN - 1);
             id++;
         }
     }
 
     fclose(f);
     printf(">>> トークナイザー初期化完了: %d 語の辞書をハッシュテーブルに格納しました。\n", id);
-    return -1;
+    return 1;
 }
 
 // テキスト (スペース区切り) をトークンIDの配列に変換する
 // 安全のため、入りきらない分は [PAD] で埋める
-void tokenize(const char *text, int *output_ids, int seq_len) {
+int tokenize(const char *text, int *output_ids, int seq_len) {
     for (int i = 0; i < seq_len; i++) output_ids[i] = 0; // PAD(0) 初期化
 
-    char temp_text[2048];
-    strncpy(temp_text, text, sizeof(temp_text) - 1);
-
-    char *token = strtok(temp_text, " ");
-    int idx = 0;
-
-    while (token != NULL && idx < seq_len) {
-        int id = search_hash(token);
-        if (id == -1) {
-            id = 100; // BERT の [UNK] ID は101 (indexは100)
-        }
-        output_ids[idx] = id;
-        id++;
-        token = strtok(NULL, " ");
+    size_t text_len = strlen(text);
+    char *editable_text = (char *)malloc(text_len + 1);
+    if (editable_text == NULL) {
+        fprintf(stderr, "Error: トークナイズ用のメモリ確保に失敗しました。\n");
+        return 0;
     }
+    strcpy(editable_text, text);
+
+    // 区切り文字を" \t\r\n" に統一
+    char *token = strtok(editable_text, " \t\r\n");
+    int token_count = 0;
+
+    while (token != NULL && token_count < seq_len) {
+        int len = strlen(token);
+        int start = 0;
+        bool is_bad = false;
+
+        // 1つの単語をWordPieceに分解するループ
+        while (start < len) {
+            int end = len;
+            int matched_id = -1;
+            char sub_word[MAX_TOKEN_LEN];
+
+            while (start < end) {
+                // 切り出す文字列の長さを計算
+                int sub_len = end - start;
+
+                // 2つ目以降のサブワードには頭に "##" を付与する
+                if (start > 0) {
+                    snprintf(sub_word, sizeof(sub_word), "##%.*s", sub_len, &token[start]);
+                } else {
+                    snprintf(sub_word, sizeof(sub_word), "%.*s", sub_len, &token[start]);
+                }
+
+                // 自作ハッシュテーブルから検索
+                int id = search_hash(sub_word);
+                if (id != -1) {
+                    matched_id = id;
+                    break;
+                }
+                end--; // 見つからなければ後ろを1文字削る
+            }
+
+            // 1文字もマッチしなかった場合は、この単語は未知語 [UNK]
+            if (matched_id == -1) {
+                is_bad = true;
+                break;
+            }
+
+            // マッチしたトークンIDを登録
+            output_ids[token_count++] = matched_id;
+            if (token_count >= seq_len) break;
+
+            // 次のパーツの開始位置を進める
+            start = end;
+        }
+
+        // WordPiece分解に失敗した単語だった場合は [UNK] (ID: 100) を入れる
+        if (is_bad) {
+            // 巻き戻して [UNK] に置き換え
+            if (token_count > 0 && start > 0) {
+                // 既に途中まで入ってしまったサブワードをクリア
+                token_count--;
+            }
+            output_ids[token_count++] = 100; // BERT の [UNK] ID
+        }
+
+        if (token_count >= seq_len) break;
+        token = strtok(NULL, " \t\r\n");
+    }
+
+    // バッファを解放
+    free(editable_text);
+
+    return token_count;
 }
 
 // トークンIDの配列を人間の読めるテキストに戻す
 void detokenize(const int *token_ids, int seq_len, char *output_text) {
     output_text[0] = '\0'; // 空文字で初期化
-    if (vocab_reverse_dist == NULL) return;
+    if (vocab_reverse_dict == NULL) return;
 
     for (int i = 0; i < seq_len; i++) {
         int id = token_ids[i];
 
         if (id >= 0 && id < VOCAB_SIZE_NEW) {
-            strcat(output_text, vocab_reverse_dist[id]);
+            strcat(output_text, vocab_reverse_dict[id]);
             strcat(output_text, " "); // 単語区切りスペース
         }
     }

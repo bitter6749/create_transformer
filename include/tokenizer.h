@@ -11,10 +11,10 @@
 int init_tokenizer_hash(const char *vocab_file_path);
 
 // 外部ファイルからIDに対応する単語文字列を逆引きするための配列ポインタ
-extern char **vocab_reverse_dist;
+extern char **vocab_reverse_dict;
 
 // トークナイズ・デトークナイズ用の関数
-void tokenize(const char *text, int *output_ids, int seq_len);
+int tokenize(const char *text, int *output_ids, int seq_len);
 void detokenize(const int *token_ids, int seq_len, char *output_text);
 
 #endif // TOKENIZER_H

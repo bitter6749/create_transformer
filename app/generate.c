@@ -13,6 +13,12 @@ int main() {
   SimpleTransformer model;
   init_model(&model);
 
+  // 辞書の構築
+  if (!init_tokenizer_hash("vocab.txt")) {
+    free_model(&model);
+    return EXIT_FAILURE;
+  }
+
   // =========================================================
   //  2. ハードディスクから学習済みの重みをロード（復元）
   // =========================================================
@@ -55,12 +61,12 @@ int main() {
     }
 
     // もし [PAD] や [UNK] が予測されたら生成を終了する
-    if (next_word_id == 0 || next_word_id == 9) {
+    if (next_word_id == 0 || next_word_id == 100) {
       break;
     }
 
     // 予測された単語を画面に表示！
-    printf("%s ", VOCAB_DICT[next_word_id]);
+    printf("%s ", vocab_reverse_dict[next_word_id]);
 
     //  【修正】トークナイザーの格納順（先頭詰め）に合わせた正しいスライディング・ウィンドウ
     // 1マスずつ左にずらして、空いた最後の場所に次の単語を正しく配置します
