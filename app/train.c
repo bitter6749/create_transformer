@@ -101,7 +101,7 @@ int main() {
   }
 
   // 2. テキストファイルを読み込んでメモリ上でトークナイズ
-  FILE *f_txt = fopen("data_input_3.txt", "r");
+  FILE *f_txt = fopen("data_input_1.txt", "r");
   if (f_txt == NULL) {
     fprintf(stderr, "Error: 'data_input.txt' が見つかりません。テキストファイルを用意してください。\n");
     free_model(&model);
@@ -156,6 +156,12 @@ int main() {
   Matrix dW_k[NUM_LAYERS];
   Matrix dW_v[NUM_LAYERS];
 
+  // バッチ全体の勾配を「蓄積（合計）」していくための巨大な箱
+  Matrix acc_dW_out = create_matrix(EMBED_DIM, VOCAB_SIZE);
+  Matrix acc_dln1_gamma[NUM_LAYERS], acc_dln1_beta[NUM_LAYERS], acc_dln2_gamma[NUM_LAYERS], acc_dln2_beta[NUM_LAYERS];
+  Matrix acc_dW1[NUM_LAYERS], acc_db1[NUM_LAYERS], acc_dW2[NUM_LAYERS], acc_db2[NUM_LAYERS];
+  Matrix acc_dW_q[NUM_LAYERS], acc_dW_k[NUM_LAYERS], acc_dW_v[NUM_LAYERS];
+
   for (int l = 0; l < NUM_LAYERS; l++) {
     dln1_gamma[l] = create_matrix(1, EMBED_DIM);
     dln1_beta[l]  = create_matrix(1, EMBED_DIM);
@@ -170,6 +176,21 @@ int main() {
     dW_q[l]       = create_matrix(EMBED_DIM, EMBED_DIM);
     dW_k[l]       = create_matrix(EMBED_DIM, EMBED_DIM);
     dW_v[l]       = create_matrix(EMBED_DIM, EMBED_DIM);
+
+    // 蓄積用の箱のメモリ確保
+    acc_dln1_gamma[l] = create_matrix(1, EMBED_DIM); 
+    acc_dln1_beta[l]  = create_matrix(1, EMBED_DIM);
+    acc_dln2_gamma[l] = create_matrix(1, EMBED_DIM); 
+    acc_dln2_beta[l]  = create_matrix(1, EMBED_DIM);
+
+    acc_dW1[l]        = create_matrix(EMBED_DIM, MLP_HIDDEN_DIM); 
+    acc_db1[l]        = create_matrix(1, MLP_HIDDEN_DIM);
+    acc_dW2[l]        = create_matrix(MLP_HIDDEN_DIM, EMBED_DIM); 
+    acc_db2[l]        = create_matrix(1, EMBED_DIM); 
+
+    acc_dW_q[l]       = create_matrix(EMBED_DIM, EMBED_DIM); 
+    acc_dW_k[l]       = create_matrix(EMBED_DIM, EMBED_DIM);
+    acc_dW_v[l]       = create_matrix(EMBED_DIM, EMBED_DIM);
   }
 
   // 次の一文字の予測確率 (27文字分) を受け取るバッファ
@@ -177,7 +198,8 @@ int main() {
 
   // ハイパーパラメータ
   float learning_rate = 0.02f; // 学習率 (lr)
-  int epochs = 80;           // 80回繰り返し学習する
+  int batch_size = 64;          // 64個のサンプルごとに1回更新する
+  int epochs = 100;           // 100回繰り返し学習する
 
   printf("=== Transformerの学習を開始します ===\n");
 
@@ -185,6 +207,25 @@ int main() {
   for (int epoch = 1; epoch <= epochs; epoch++) {
     float epoch_loss_sum = 0.0f;
     int step_count = 0;
+    int batch_accumulator_count = 0;
+
+    // バッチ全体の蓄積箱を 0.0f でクリア
+    for (int i = 0; i < acc_dW_out.rows * acc_dW_out.cols; i++) acc_dW_out.data[i] = 0.0f;
+    for (int l = 0; l < NUM_LAYERS; l++) {
+      for (int i = 0; i < acc_dln1_gamma[l].rows * acc_dln1_gamma[l].cols; i++) { 
+        acc_dln1_gamma[l].data[i] = 0.0f; 
+        acc_dln1_beta[l].data[i] = 0.0f; 
+        acc_dln2_gamma[l].data[i] = 0.0f; 
+        acc_dln2_beta[l].data[i] = 0.0f; 
+      }
+      for (int i = 0; i < acc_dW_q[l].rows * acc_dW_q[l].cols; i++) acc_dW_q[l].data[i] = 0.0f;
+      for (int i = 0; i < acc_dW_k[l].rows * acc_dW_k[l].cols; i++) acc_dW_k[l].data[i] = 0.0f;
+      for (int i = 0; i < acc_dW_v[l].rows * acc_dW_v[l].cols; i++) acc_dW_v[l].data[i] = 0.0f;
+      for (int i = 0; i < acc_dW1[l].rows * acc_dW1[l].cols; i++)   acc_dW1[l].data[i] = 0.0f;
+      for (int i = 0; i < acc_db1[l].rows * acc_db1[l].cols; i++)   acc_db1[l].data[i] = 0.0f;
+      for (int i = 0; i < acc_dW2[l].rows * acc_dW2[l].cols; i++)   acc_dW2[l].data[i] = 0.0f;
+      for (int i = 0; i < acc_db2[l].rows * acc_db2[l].cols; i++)   acc_db2[l].data[i] = 0.0f;
+    }
 
     int input_ids[SEQ_LEN]; // PAD(0) で初期化
     for (int p = 0; p < total_words - 1; p++) {
@@ -223,33 +264,125 @@ int main() {
         dW1, db1, dW2, db2, dW_q, dW_k, dW_v
       );
 
-      // STEP 4-2: 算出された勾配を使って、各パラメーターを更新 (SGD)
-      gradient_descent_update(&model.W_out, &dW_out, learning_rate);
-
-      // 全レイヤーのパラメータを一括ループ更新
+      // 計算した勾配（dW）を、バッチ蓄積用の箱（acc_dW）にひたすら足し算する
+      for (int i = 0; i < dW_out.rows * dW_out.cols; i++) acc_dW_out.data[i] += dW_out.data[i];
       for (int l = 0; l < NUM_LAYERS; l++) {
-        gradient_descent_update(&model.ln1_gamma[l], &dln1_gamma[l], learning_rate);
-        gradient_descent_update(&model.ln1_beta[l],  &dln1_beta[l],  learning_rate);
-        gradient_descent_update(&model.ln2_gamma[l], &dln2_gamma[l], learning_rate);
-        gradient_descent_update(&model.ln2_beta[l],  &dln2_beta[l],  learning_rate);
-        
-        gradient_descent_update(&model.W_q[l],   &dW_q[l],   learning_rate);
-        gradient_descent_update(&model.W_k[l],   &dW_k[l],   learning_rate);
-        gradient_descent_update(&model.W_v[l],   &dW_v[l],   learning_rate);
-        
-        gradient_descent_update(&model.W1[l],    &dW1[l],    learning_rate);
-        gradient_descent_update(&model.b1[l],    &db1[l],    learning_rate);
-        gradient_descent_update(&model.W2[l],    &dW2[l],    learning_rate);
-        gradient_descent_update(&model.b2[l],    &db2[l],    learning_rate);
+        for (int i = 0; i < dln1_gamma[l].rows * dln1_gamma[l].cols; i++) { 
+          acc_dln1_gamma[l].data[i] += dln1_gamma[l].data[i];
+          acc_dln1_beta[l].data[i] += dln1_beta[l].data[i]; 
+          acc_dln2_gamma[l].data[i] += dln2_gamma[l].data[i]; 
+          acc_dln2_beta[l].data[i] += dln2_beta[l].data[i]; 
+        }
+        for (int i = 0; i < dW_q[l].rows * dW_q[l].cols; i++) acc_dW_q[l].data[i] += dW_q[l].data[i];
+        for (int i = 0; i < dW_k[l].rows * dW_k[l].cols; i++) acc_dW_k[l].data[i] += dW_k[l].data[i];
+        for (int i = 0; i < dW_v[l].rows * dW_v[l].cols; i++) acc_dW_v[l].data[i] += dW_v[l].data[i];
+        for (int i = 0; i < dW1[l].rows * dW1[l].cols; i++)   acc_dW1[l].data[i] += dW1[l].data[i];
+        for (int i = 0; i < db1[l].rows * db1[l].cols; i++)   acc_db1[l].data[i] += db1[l].data[i];
+        for (int i = 0; i < dW2[l].rows * dW2[l].cols; i++)   acc_dW2[l].data[i] += dW2[l].data[i];
+        for (int i = 0; i < db2[l].rows * db2[l].cols; i++)   acc_db2[l].data[i] += db2[l].data[i];
       }
 
-      // 損失（クロスエントロピー）の簡易計算（正解確率のマイナス対数）
+      batch_accumulator_count++;
+
+      // バッチサイズ分溜まったら、一括して平均化・クリッピング・更新を行う
+      if (batch_accumulator_count == batch_size || p == total_words - 2) {
+        
+        // 1. 勾配をサンプル数で割って平均化する (パラメータ更新はここでは絶対にしない)
+        float inv_b = 1.0f / (float)batch_accumulator_count;
+        for (int i = 0; i < acc_dW_out.rows * acc_dW_out.cols; i++) acc_dW_out.data[i] *= inv_b;
+        for (int l = 0; l < NUM_LAYERS; l++) {
+          for (int i = 0; i < acc_dln1_gamma[l].rows * acc_dln1_gamma[l].cols; i++) {
+            acc_dln1_gamma[l].data[i] *= inv_b; acc_dln1_beta[l].data[i] *= inv_b;
+            acc_dln2_gamma[l].data[i] *= inv_b; acc_dln2_beta[l].data[i] *= inv_b;
+          }
+          for (int i = 0; i < acc_dW_q[l].rows * acc_dW_q[l].cols; i++) acc_dW_q[l].data[i] *= inv_b;
+          for (int i = 0; i < acc_dW_k[l].rows * acc_dW_k[l].cols; i++) acc_dW_k[l].data[i] *= inv_b;
+          for (int i = 0; i < acc_dW_v[l].rows * acc_dW_v[l].cols; i++) acc_dW_v[l].data[i] *= inv_b;
+          for (int i = 0; i < acc_dW1[l].rows * acc_dW1[l].cols; i++)   acc_dW1[l].data[i] *= inv_b;
+          for (int i = 0; i < acc_db1[l].rows * acc_db1[l].cols; i++)   acc_db1[l].data[i] *= inv_b;
+          for (int i = 0; i < acc_dW2[l].rows * acc_dW2[l].cols; i++)   acc_dW2[l].data[i] *= inv_b;
+          for (int i = 0; i < acc_db2[l].rows * acc_db2[l].cols; i++)   acc_db2[l].data[i] *= inv_b;
+        }
+
+        // 2. 勾配クリッピング (暴走を抑える安全弁：0.0fにするのではなく、上限値 clip_val に丸める)
+        float clip_val = 1.0f;
+        for (int i = 0; i < acc_dW_out.rows * acc_dW_out.cols; i++) {
+          if (acc_dW_out.data[i] > clip_val)  acc_dW_out.data[i] = clip_val;
+          if (acc_dW_out.data[i] < -clip_val) acc_dW_out.data[i] = -clip_val;
+        }
+        for (int l = 0; l < NUM_LAYERS; l++) {
+          for (int i = 0; i < acc_dln1_gamma[l].rows * acc_dln1_gamma[l].cols; i++) { 
+            if (acc_dln1_gamma[l].data[i] > clip_val)  acc_dln1_gamma[l].data[i] = clip_val;
+            if (acc_dln1_gamma[l].data[i] < -clip_val) acc_dln1_gamma[l].data[i] = -clip_val;
+            if (acc_dln1_beta[l].data[i] > clip_val)   acc_dln1_beta[l].data[i] = clip_val;
+            if (acc_dln1_beta[l].data[i] < -clip_val)  acc_dln1_beta[l].data[i] = -clip_val;
+            if (acc_dln2_gamma[l].data[i] > clip_val)  acc_dln2_gamma[l].data[i] = clip_val;
+            if (acc_dln2_gamma[l].data[i] < -clip_val) acc_dln2_gamma[l].data[i] = -clip_val;
+            if (acc_dln2_beta[l].data[i] > clip_val)   acc_dln2_beta[l].data[i] = clip_val;
+            if (acc_dln2_beta[l].data[i] < -clip_val)  acc_dln2_beta[l].data[i] = -clip_val;
+          }
+          for (int i = 0; i < acc_dW_q[l].rows * acc_dW_q[l].cols; i++) { if (acc_dW_q[l].data[i] > clip_val) acc_dW_q[l].data[i] = clip_val; if (acc_dW_q[l].data[i] < -clip_val) acc_dW_q[l].data[i] = -clip_val; }
+          for (int i = 0; i < acc_dW_k[l].rows * acc_dW_k[l].cols; i++) { if (acc_dW_k[l].data[i] > clip_val) acc_dW_k[l].data[i] = clip_val; if (acc_dW_k[l].data[i] < -clip_val) acc_dW_k[l].data[i] = -clip_val; }
+          for (int i = 0; i < acc_dW_v[l].rows * acc_dW_v[l].cols; i++) { if (acc_dW_v[l].data[i] > clip_val) acc_dW_v[l].data[i] = clip_val; if (acc_dW_v[l].data[i] < -clip_val) acc_dW_v[l].data[i] = -clip_val; }
+          for (int i = 0; i < acc_dW1[l].rows * acc_dW1[l].cols; i++)   { if (acc_dW1[l].data[i] > clip_val) acc_dW1[l].data[i] = clip_val; if (acc_dW1[l].data[i] < -clip_val) acc_dW1[l].data[i] = -clip_val; }
+          for (int i = 0; i < acc_db1[l].rows * acc_db1[l].cols; i++)   { if (acc_db1[l].data[i] > clip_val) acc_db1[l].data[i] = clip_val; if (acc_db1[l].data[i] < -clip_val) acc_db1[l].data[i] = -clip_val; }
+          for (int i = 0; i < acc_dW2[l].rows * acc_dW2[l].cols; i++)   { if (acc_dW2[l].data[i] > clip_val) acc_dW2[l].data[i] = clip_val; if (acc_dW2[l].data[i] < -clip_val) acc_dW2[l].data[i] = -clip_val; }
+          for (int i = 0; i < acc_db2[l].rows * acc_db2[l].cols; i++)   { if (acc_db2[l].data[i] > clip_val) acc_db2[l].data[i] = clip_val; if (acc_db2[l].data[i] < -clip_val) acc_db2[l].data[i] = -clip_val; }
+        }
+
+        // 3. 平均化＋クリッピングされた安全な勾配を使って、パラメータを一括更新 (SGD)
+        gradient_descent_update(&model.W_out, &acc_dW_out, learning_rate);
+        for (int l = 0; l < NUM_LAYERS; l++) {
+          gradient_descent_update(&model.ln1_gamma[l], &acc_dln1_gamma[l], learning_rate);
+          gradient_descent_update(&model.ln1_beta[l],  &acc_dln1_beta[l],  learning_rate);
+          gradient_descent_update(&model.ln2_gamma[l], &acc_dln2_gamma[l], learning_rate);
+          gradient_descent_update(&model.ln2_beta[l],  &acc_dln2_beta[l],  learning_rate);
+
+          gradient_descent_update(&model.W_q[l], &acc_dW_q[l], learning_rate);
+          gradient_descent_update(&model.W_k[l], &acc_dW_k[l], learning_rate);
+          gradient_descent_update(&model.W_v[l], &acc_dW_v[l], learning_rate);
+
+          gradient_descent_update(&model.W1[l],  &acc_dW1[l],  learning_rate);
+          gradient_descent_update(&model.b1[l],  &acc_db1[l],  learning_rate);
+          gradient_descent_update(&model.W2[l],  &acc_dW2[l],  learning_rate);
+          gradient_descent_update(&model.b2[l],  &acc_db2[l],  learning_rate);
+        }
+
+        // 4. 次のバッチのために蓄積カウンタと蓄積箱を 0.0f に完全リセット
+        batch_accumulator_count = 0;
+        for (int i = 0; i < acc_dW_out.rows * acc_dW_out.cols; i++) acc_dW_out.data[i] = 0.0f;
+        for (int l = 0; l < NUM_LAYERS; l++) {
+          for (int i = 0; i < acc_dln1_gamma[l].rows * acc_dln1_gamma[l].cols; i++) { 
+            acc_dln1_gamma[l].data[i] = 0.0f; acc_dln1_beta[l].data[i] = 0.0f; 
+            acc_dln2_gamma[l].data[i] = 0.0f; acc_dln2_beta[l].data[i] = 0.0f; 
+          }
+          for (int i = 0; i < acc_dW_q[l].rows * acc_dW_q[l].cols; i++) acc_dW_q[l].data[i] = 0.0f;
+          for (int i = 0; i < acc_dW_k[l].rows * acc_dW_k[l].cols; i++) acc_dW_k[l].data[i] = 0.0f;
+          for (int i = 0; i < acc_dW_v[l].rows * acc_dW_v[l].cols; i++) acc_dW_v[l].data[i] = 0.0f;
+          for (int i = 0; i < acc_dW1[l].rows * acc_dW1[l].cols; i++)   acc_dW1[l].data[i] = 0.0f;
+          for (int i = 0; i < acc_db1[l].rows * acc_db1[l].cols; i++)   acc_db1[l].data[i] = 0.0f;
+          for (int i = 0; i < acc_dW2[l].rows * acc_dW2[l].cols; i++)   acc_dW2[l].data[i] = 0.0f;
+          for (int i = 0; i < acc_db2[l].rows * acc_db2[l].cols; i++)   acc_db2[l].data[i] = 0.0f;
+        }
+      } 
+
+      // 損失の簡易計算と進捗ログ
       forward_transformer(&model, input_ids, &output_probabilities);
-      epoch_loss_sum += -logf(output_probabilities.data[target_id] + 1e-4f);
+
+      float prob = output_probabilities.data[target_id];
+      if (prob < 1e-5f) prob = 1e-5f;
+      if (prob > 1.0f) prob = 1.0f;
+
+      epoch_loss_sum += -logf(prob);
       step_count++;
+
+      // 100 ステップごとに現在の平均Lossを出力して進捗を可視化
+      if (step_count % 100 == 0) {
+        printf("  [Step %d / %d] 現在の暫定平均Loss: %.4f\n", step_count, total_words, epoch_loss_sum / (float)step_count);
+      }
     }
 
-    printf("Epoch %3d: 平均Loss(文章の予測しづらさ): %.4f\n", epoch, epoch_loss_sum / (float)step_count);
+    printf("-- Epoch %3d: 完了時の全体平均Loss: %.4f --\n", epoch, epoch_loss_sum / (float)step_count);
   }
 
   printf("=== 学習完了 ===\n");
