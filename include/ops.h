@@ -81,4 +81,12 @@ void save_matrix(const Matrix *m, const char *filename);
 // ファイルから行列のデータを読み込む (メモリ確保は事前に済んでいる前提)
 void load_matrix(Matrix *m, const char *filename);
 
+// GPUでの処理
+void matrix_add_gpu(
+  const float* host_A,
+  const float* host_B,
+  float* host_C,
+  int size
+);
+
 #endif // OPS_H
