@@ -86,4 +86,7 @@ void save_matrix(const Matrix *m, const char *filename);
 void load_matrix(Matrix *m, const char *filename);
 
 
+void mat_compute_cross_entropy_grad(const Matrix *prob, Matrix *d_out, int target_id);
+void mat_write_row(const Matrix *src, Matrix *dest, int target_row);
+
 #endif // OPS_H

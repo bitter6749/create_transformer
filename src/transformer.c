@@ -6,6 +6,7 @@
 #include "attention.h"
 #include "mlp.h"
 #include "ops.h"
+#include "matrix.h"
 
 // ====================
 // === 出力層の順伝播 ===
@@ -136,10 +137,11 @@ void backward_lm_head(
   // (予測確率 - 正解ラベル) になる
   // 正解ラベルは確率の最大値 1 になる
   Matrix dOutput_Linear = create_matrix(1, VOCAB_SIZE);
-  for (int i = 0; i < VOCAB_SIZE; i++) {
-    dOutput_Linear.data[i] = output_probabilities->data[i];
-  }
-  dOutput_Linear.data[target_id] -= 1.0f; // (予測確率 - 正解ラベル )
+  // for (int i = 0; i < VOCAB_SIZE; i++) {
+  //   dOutput_Linear.data[i] = output_probabilities->data[i];
+  // }
+  // dOutput_Linear.data[target_id] -= 1.0f; // (予測確率 - 正解ラベル )
+  mat_compute_cross_entropy_grad(output_probabilities, &dOutput_Linear, target_id);
 
   // 2. 順伝播の時と同じく、最後のトークン(SEQ_LEN - 1)の特徴量を抽出
   Matrix last_z = create_matrix(1, embed_dim);
@@ -157,9 +159,10 @@ void backward_lm_head(
   mat_mul_b_trans(&dOutput_Linear, W_out, &dLast_z);
 
   // 5. 全体の誤差行列 dY_mlp の最後の行に、計算した誤差を書き戻す
-  for (int j = 0; j < embed_dim; j++) {
-    dY_mlp->data[(seq_len - 1) * embed_dim + j] = dLast_z.data[j];
-  }
+  // for (int j = 0; j < embed_dim; j++) {
+  //   dY_mlp->data[(seq_len - 1) * embed_dim + j] = dLast_z.data[j];
+  // }
+  mat_write_row(&dLast_z, dY_mlp, seq_len - 1);
 
   // ワークスペースの解放
   free_matrix(&dOutput_Linear);
@@ -250,15 +253,12 @@ void backward_transformer(
 
   // NUM_LAYERS から 0 に向かって、逆順に誤差を逆流させる
   for (int l = NUM_LAYERS - 1; l >= 0; l--) {
-    // 1. MLPの計算の前に、上流からの誤差を一度CPUにロード
-    download_matrix(&dX_stream);
 
     // 2. MLP ブロックの逆伝播
     // 残差接続の微分は、定数なので無視
     // メインストリームの誤差 dX_stream が、そのまま MLP への誤差 (dBlock_out) になる
-    for (int i = 0; i < SEQ_LEN * EMBED_DIM; i++) dBlock_out.data[i] = dX_stream.data[i];
-
-    upload_matrix(&dBlock_out);
+    // for (int i = 0; i < SEQ_LEN * EMBED_DIM; i++) dBlock_out.data[i] = dX_stream.data[i];
+    copy_matrix(&dX_stream, &dBlock_out);
 
     // MLP 本体の逆伝播
     backward_mlp(
@@ -283,7 +283,8 @@ void backward_transformer(
     mat_add(&dX_stream, &dBlock_out, &dX_stream);
 
     // Attention ブロックの逆伝播
-    for (int i = 0; i < SEQ_LEN * EMBED_DIM; i++) dBlock_out.data[i] = dX_stream.data[i];
+    // for (int i = 0; i < SEQ_LEN * EMBED_DIM; i++) dBlock_out.data[i] = dX_stream.data[i];
+    copy_matrix(&dX_stream, &dBlock_out);
 
     // Attention 本体の逆伝播
     backward_attention(

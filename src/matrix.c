@@ -193,8 +193,30 @@ void mat_sgd_update(Matrix *W, const Matrix *dW, float lr) {
   sgd_update_gpu(W->device_data, dW->device_data, lr, size);
 }
 
-// ? GPU上のデータを一瞬で 0.0f にクリア
+// GPU上のデータを一瞬で 0.0f にクリア
 void mat_clear(Matrix *M) {
   int size = M->rows * M->cols;
   matrix_clear_gpu(M->device_data, size);
+}
+
+// バイアス加算のラッパー
+void mat_bias_add(Matrix *m, const Matrix *bias) {
+  bias_add_gpu(m->device_data, bias->device_data, m->rows, m->cols);
+}
+
+// 行列コピーのラッパー
+void mat_copy(const Matrix *src, Matrix *dest) {
+  int size = src->rows * src->cols;
+  copy_matrix_gpu(src->device_data, dest->device_data, size);
+}
+
+// スカラー倍のラッパー (ops.c の scale_matrix を置き換えてもOKです)
+void mat_scale(Matrix *m, float scalar) {
+  int size = m->rows * m->cols;
+  scale_matrix_gpu(m->device_data, scalar, size);
+}
+
+// 行抽出のラッパー (ops.c の extract_row を置き換えてもOKです)
+void mat_extract_row(const Matrix *src, int row, Matrix *dest) {
+  extract_row_gpu(src->device_data, row, dest->device_data, src->cols);
 }

@@ -373,24 +373,6 @@ int main() {
       if (step_count % 100 == 0) {
         printf("  [Step %d / %d] 現在の暫定平均Loss: %.4f\n", step_count, total_words, epoch_loss_sum / (float)step_count);
       }
-
-      if (step_count == 1) {
-        // GPUから一度CPUへ重みを緊急回収
-        download_matrix(&model.W_out);
-        
-        printf("[DEBUG] W_out の先頭10要素の値を表示します:\n");
-        for (int i = 0; i < 10; i++) {
-          printf("  W_out[%d] = %f\n", i, model.W_out.data[i]);
-        }
-        
-        // 勾配の蓄積箱も確認
-        download_matrix(&acc_dW_out);
-        printf("[DEBUG] acc_dW_out の先頭10要素の値を表示します:\n");
-        for (int i = 0; i < 10; i++) {
-          printf("  acc_dW_out[%d] = %f\n", i, acc_dW_out.data[i]);
-        }
-        exit(0); // 1ステップ目で強制終了してログを見る
-      }
     }
 
     printf("-- Epoch %3d: 完了時の全体平均Loss: %.4f --\n", epoch, epoch_loss_sum / (float)step_count);
