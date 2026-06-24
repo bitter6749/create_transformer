@@ -41,6 +41,15 @@ void mat_mul(const Matrix *A, const Matrix *B, Matrix *C) {
     exit(EXIT_FAILURE);
   }
 
+  // matrix_mul_gpu(
+  //   A->data,
+  //   B->data,
+  //   C->data,
+  //   A->rows,
+  //   A->cols,
+  //   B->cols
+  // );
+
   for (int A_row = 0; A_row < A->rows; A_row++) {
     for (int B_col = 0; B_col < B->cols; B_col++) {
       // 各行と列の内積
@@ -68,10 +77,12 @@ void mat_add(const Matrix *A, const Matrix *B, Matrix *C) {
   }
 
   int total_elements = A->rows * A->cols;
+
   for (int i = 0; i < total_elements; i++) {
     C->data[i] = A->data[i] + B->data[i];
   }
 
+  // matrix_add_gpu(A->data, B->data, C->data, total_elements);
 }
 
 // 左側転置の行列掛け算 C = A^T ・ B
@@ -81,6 +92,15 @@ void mat_mul_a_trans(const Matrix *A, const Matrix *B, Matrix *C) {
     fprintf(stderr, "Error: 行列のサイズが不一致です。\n");
     exit(EXIT_FAILURE);
   }
+
+  // matrix_mul_a_trans_gpu(
+  //   A->data,
+  //   B->data,
+  //   C->data,
+  //   A->rows,
+  //   A->cols,
+  //   B->cols
+  // );
 
   for (int A_col = 0; A_col < A->cols; A_col++) {
     for (int B_col = 0; B_col < B->cols; B_col++) {
@@ -105,6 +125,15 @@ void mat_mul_b_trans(const Matrix *A, const Matrix *B, Matrix *C) {
     fprintf(stderr, "Error: 行列のサイズが不一致です。\n");
     exit(EXIT_FAILURE);
   }
+
+  // matrix_mul_b_trans_gpu(
+  //   A->data,
+  //   B->data,
+  //   C->data,
+  //   A->rows,
+  //   A->cols,
+  //   B->rows
+  // );
 
   for (int A_row = 0; A_row < A->rows; A_row++) {
     for (int B_row = 0; B_row < B->rows; B_row++) {

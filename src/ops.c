@@ -4,10 +4,10 @@
 #include "ops.h"
 
 // ===============
-// === 行列関連 ===
+// === ???? ===
 // ===============
 
-// 行列 src の指定された 行 row のデータを 1行の行列 dest にコピーする
+// ?? src ??????? ? row ????? 1????? dest ??????
 void extract_row(const Matrix *src, int row, Matrix *dest) {
   int cols = src->cols;
 
@@ -16,7 +16,7 @@ void extract_row(const Matrix *src, int row, Matrix *dest) {
   }
 }
 
-// 行列のすべての要素にスカラー(実数)を掛け算する
+// ????????????????????????????
 void scale_matrix(Matrix *m, float scalar) {
   int total_elements = m->rows * m->cols;
   for (int i = 0; i < total_elements; i++) {
@@ -24,14 +24,14 @@ void scale_matrix(Matrix *m, float scalar) {
   }
 }
 
-// ===================
-// === 順伝播の関数 ===
-// ===================
+// =================
+// === ????? ===
+// =================
 
-// 埋め込み(Embedding)層
-// input_ids: [SEQ_LEN] のID配列
-// embedding_table: モデルが持つ単語埋め込み行列 [VOCAB_SIZE x EMBED_DIM]
-// X: 出力先の行列 [SEQ_LEN x EMBED_DIM]
+// ????(Embedding)?
+// input_ids: [SEQ_LEN] ???ID??
+// embedding_table: ??????????????? [VOCAB_SIZE x EMBED_DIM]
+// X: ???? [SEQ_LEN x EMBED_DIM]
 void forward_embedding(
   const int *input_ids,
   int seq_len,
@@ -39,12 +39,6 @@ void forward_embedding(
   const Matrix *embedding_table,
   Matrix *X
 ) {
-  // 【入力されたID】      【token_embedding（対応表）】          【出力される行列 X】
-  // id = 2  ('c')  ───>  [行0]  ( 'a' の16次元ベクトル )         [1行目] ('c' のベクトル)
-  // id = 0  ('a')  ───>  [行1]  ( 'b' の16次元ベクトル ) ───>   [2行目] ('a' のベクトル)
-  // id = 19 ('t')  ───>  [行2]  ( 'c' の16次元ベクトル )         [3行目] ('t' のベクトル)
-  // id = 26 (' ')  ───>   ...                                    [4行目] (' ' のベクトル)
-  //                      [行26] ( ' ' の16次元ベクトル )
   for (int t = 0; t < seq_len; t++) {
     int id = input_ids[t];
     for (int d = 0; d < embed_dim; d++) {
@@ -53,31 +47,31 @@ void forward_embedding(
   }
 }
 
-// 位置エンコーディング
-// サイン・コサイン方式 (絶対位置エンコーディング)
-// 行列 x [SEQ_LEN x EMBED_DIM] に対し、位置エンコーディングを直接足し算する
+// ??????????
+// ?????????? (????????????)
+// ?? x [SEQ_LEN x EMBED_DIM] 
 void apply_positional_encoding(Matrix *X) {
   int seq_len = X->rows;
   int embed_dim = X->cols;
 
   for (int pos = 0; pos < seq_len; pos++) {
     for (int i = 0; i < embed_dim / 2; i++) {
-      // 分母の計算: 10000^(2i / d_model)
+      // ?????: 10000^(2i / d_model)
       float budget = (float)(2 * i) / (float)embed_dim;
       float denom = powf(10000.0f, budget);
 
-      // 偶数次元には Sin, 奇数次元には Cos
+      // ????????? Sin, ????????? Cos
       float sin_val = sinf((float)pos / denom);
       float cos_val = cosf((float)pos / denom);
 
-      // 元の行列 X に足し算する
+      // ???? X ???????
       X->data[pos * embed_dim + (2 * i)] += sin_val;
       X->data[pos * embed_dim + (2 * i + 1)] += cos_val;
     }
   }
 }
 
-// layerNormの順伝播
+// layerNorm????
 void forward_layernom(
   const Matrix *X,
   const Matrix *gamma,
@@ -86,17 +80,17 @@ void forward_layernom(
 ) {
   int rows = X->rows;
   int cols = X->cols;
-  float eps = 1e-5f; // 0除算を防ぐ微小値
+  float eps = 1e-5f; // 0?????????????
 
   for (int i = 0; i < rows; i++) {
-    // 1. 平均 μ の計算
+    // 1. ?? ? ???
     float sum = 0.0f;
     for (int j = 0; j < cols; j++) {
       sum += X->data[i * cols + j];
     }
     float mean = sum / (float)cols;
 
-    // 2. 分散 σ^2 の計算
+    // 2. ?? ?^2 ???
     float var_sum = 0.0f;
     for (int j = 0; j < cols; j++) {
       float diff = X->data[i * cols + j] - mean;
@@ -104,7 +98,7 @@ void forward_layernom(
     }
     float var = var_sum / (float)cols;
 
-    // 3. 正規化とアフィン変換 (y = gamma * x_hat + beta)
+    // 3. ?????????? (y = gamma * x_hat + beta)
     for (int j = 0; j < cols; j++) {
       int idx = i * cols + j;
       float x_hat = (X->data[idx] - mean) / sqrtf(var + eps);
@@ -114,25 +108,25 @@ void forward_layernom(
   }
 }
 
-// ソフトマックス関数
+// ?????????
 void softmax_row(Matrix *m, int row) {
   int cols = m->cols;
   float *row_data = &m->data[row * cols];
 
-  // 最大値の探索 (オーバーフロー対策)
+  // ?????? (?????????)
   float max_val = row_data[0];
   for (int i = 1; i < cols; i++) {
     if (row_data[i] > max_val) max_val = row_data[i];
   }
 
-  // 指数関数の計算と総和
+  // ?????????????
   float sum = 0.0f;
   for (int i = 0; i < cols; i++) {
     row_data[i] = expf(row_data[i] - max_val);
     sum += row_data[i];
   }
 
-  // 正規化
+  // ???
   for (int i = 0; i < cols; i++) {
     row_data[i] /= sum;
   }
@@ -147,11 +141,11 @@ void relu(Matrix *m) {
   }
 }
 
-// ===================
-// === 逆伝播の関数 ===
-// ===================
+// =================
+// === ????? ===
+// =================
 
-// 埋め込み(Embedding)層の逆伝播
+// ?????? (Embedding) ?????
 void backward_embedding (
   const Matrix *dX,
   const int *input_ids,
@@ -160,17 +154,17 @@ void backward_embedding (
   Matrix *embedding_table
 ) {
   for (int t = 0; t < seq_len; t++) {
-    int id = input_ids[t]; // 今回の文字ID を特定
+    int id = input_ids[t]; // ??????ID???
     
     for (int d = 0; d < embed_dim; d++) {
-      // One-Hot 行列との積
-      // 大量の 0 との掛け算を省くためにインデックスを指定して加算
+      // One-Hot ???????
+      // ?? 0 ???????????????????????????????
       embedding_table->data[id * embed_dim + d] += dX->data[t * embed_dim + d];
     }
   }
 }
 
-// layerNormの逆伝播
+// layerNorm????
 void backward_layernorm(
   const Matrix *dOut,
   const Matrix *X,
@@ -184,7 +178,7 @@ void backward_layernorm(
   float eps = 1e-5f;
 
   for (int i = 0; i < rows; i++) {
-    // 順伝播の平均と分散を再計算
+    // ?????????????
     float sum = 0.0f;
     for (int j = 0; j < cols; j++) sum += X->data[i * cols + j];
     float mean = sum / (float)cols;
@@ -197,14 +191,14 @@ void backward_layernorm(
     float var = var_sum / (float)cols;
     float inv_std = 1.0f / sqrtf(var + eps);
 
-    // 中間計算用
+    // ?????
     float sum_dout_xhat = 0.0f;
     float sum_dout = 0.0f;
     for (int j = 0; j < cols; j++) {
       int idx = i * cols + j;
       float x_hat = (X->data[idx] - mean) * inv_std;
 
-      // パラメーターの勾配蓄積
+      // ????????????
       dgamma->data[j] += dOut->data[idx] * x_hat;
       dbeta->data[j] += dOut->data[idx];
 
@@ -212,7 +206,7 @@ void backward_layernorm(
       sum_dout      += dOut->data[idx] * gamma->data[j];
     }
 
-    // 下流への入力誤差 dX の計算 (公式の展開)
+    // ???????? dX ???
     for (int j = 0; j < cols; j++) {
       int idx = i * cols + j;
       float x_hat = (X->data[idx] - mean) * inv_std;
@@ -227,35 +221,38 @@ void backward_softmax(const Matrix *dA, const Matrix *A, Matrix *dS) {
   int rows = A->rows;
   int cols = A->cols;
 
-  // 行ごとにSoftmaxの逆伝播（微分の合流）を計算
+  // ?????? Softmax ???? (?????????) ???
   for (int i = 0; i < rows; i++) {
 
-    /* * 【数学的背景の解説】
-     * Softmax公式: y_i = exp(x_i) / Σ exp(x_k)
-     * * 1つの入力 x_j を動かすと、分母の「総和」を通じてすべての出力 y_1 ~ y_n が変化するため、
-     * チェインルールにより、すべての出力から戻ってきた誤差 dA_i の責任を合計する必要がある。
-     * * 商の微分公式より、x_j に関する微分は以下の2ケースに分かれる:
-     * 1) 自分が分子にいるとき (i == j): ∂y_i / ∂x_i = y_i * (1 - y_i)
-     * 2) 自分が分母にいるとき (i != j): ∂y_i / ∂x_j = -y_i * y_j
-     * * これらをチェインルールで合流させて整理すると、最終的な誤差 dS_j の公式は以下になる:
-     * 上流から戻ってきた誤差を dA_i、求めたいSoftmax前の生スコアへの誤差を dS_j とします。
-     * dS_j = y_j * ( dA_j - Σ (dA_i * y_i) )
-     * * つまり、「自分の上流誤差(dA_j)」と「全体の誤差の期待値(Σ dA_i * y_i)」の
-     * 差分（どれだけ平均より突出してズレているか）に対して、自分の存在感（y_j）を掛け算する。
+    /* 
+     * ??????????????
+     * Softmax???: y_i = exp(x_i) / ? exp(x_k)
+     * 1???? x_j ???????????????????????????? y_1 ~ y_n ??????????
+     * ??????????????????????????? dA_i ???????????????????
+     * ????????x_j ?????????2????????????
+     * 1) ???????????? (i == j): ?y_i / ?x_i = y_i * (1 - y_i)
+     * 2) ???????????? (i != j): ?y_i / ?x_j = -y_i * y_j
      * 
-     * y_i => A_prob.data[idx] (順伝播のSoftmax出力確率)
-     * dA_i => dA.data[idx]    (上流からの誤差)
-     * dS_j => dS.data[idx]    (求める生のスコアの誤差)
+     * ???????????????????????? dS_j ???????????
+     * ?????? dA_i ??????Softmax????????????? dS_j?
+     * dS_j = y_j * ( dA_j - ? (dA_i * y_i) )
+     * 
+     * ??????????(dA_j)?????????(? dA_i * y_i)????????????
+     * ???????(y_j)???????????????
+     * 
+     * y_i  => A_prob.data[idx] (?????Softmax????)
+     * dA_i => dA.data[idx]     (?????)
+     * dS_j => dS.data[idx]     (?????????????)
      */
 
-    // 1. 公式の右側にある「誤差の期待値（総和部分）」を先に計算: sum_da_a = Σ (dA_i * y_i)
+    // 1. ?????????????????????????: sum_da_a = ? (dA_i * y_i)
     float sum_da_a = 0.0f;
     for (int k = 0; k < cols; k++) {
       int idx = i * cols + k;
       sum_da_a += dA->data[idx] * A->data[idx];
     }
     
-    // 2. 公式の外側を掛け算して下流への誤差を確定: dS_j = y_j * (dA_j - sum_da_a)
+    // 2. ?????????????????: dS_j = y_j * (dA_j - sum_da_a)
     for (int j = 0; j < cols; j++) {
       int idx = i * cols + j;
       dS->data[idx] = A->data[idx] * (dA->data[idx] - sum_da_a);
@@ -267,21 +264,21 @@ void backward_relu(const Matrix *dOut, const Matrix *Out, Matrix *dIn) {
   int total_elements = Out->rows * Out->cols;
 
   for (int i = 0; i < total_elements; i++) {
-    // 順伝播の出力が 0 より大きければ誤差をそのまま流す
+    // ??????? 0 ??????????????
     if (Out->data[i] > 0.0f) {
       dIn->data[i] = dOut->data[i];
     } else {
-      // 0 以下なら下流への誤差は 0 になる
+      // 0 ????????? 0 ???
       dIn->data[i] = 0.0f;
     }
   } 
 }
 
 // ============================
-// === 重みパラメーターの更新 ===
+// === ??????????? ===
 // ============================
 
-// パラメーター更新の式: W = W - lr *dW
+// ?????????: W = W - lr * dW
 void gradient_descent_update(Matrix *W, const Matrix *dW, float lr) { 
   int total_elements = W->rows * W->cols;
   for (int i = 0; i < total_elements; i++) {
@@ -289,20 +286,19 @@ void gradient_descent_update(Matrix *W, const Matrix *dW, float lr) {
   }
 }
 
-// =====================================
-// === 重みパラメーターの保存・読み込み ===
-// =====================================
+// ======================================
+// === ????????????/???? ===
+// ======================================
 
-// 行列のデータをファイルに保存する
+// ?????????????
 void save_matrix(const Matrix *m, const char *filename) {
   FILE *f = fopen(filename, "wb");
 
   if (f == NULL) {
-    fprintf(stderr, "Error: ファイル %s を開けませんでした。\n", filename);
+    fprintf(stderr, "Error: ?t?@?C?? %s ???J????????????B\n", filename);
     return;
   }
 
-  // 行数、列数、データの中身を順番にバイナリとして書き出す
   fwrite(&m->rows, sizeof(int), 1, f);
   fwrite(&m->cols, sizeof(int), 1, f);
   fwrite(m->data, sizeof(float), m->rows * m->cols, f);
@@ -310,11 +306,11 @@ void save_matrix(const Matrix *m, const char *filename) {
   fclose(f);
 }
 
-// ファイルから行列のデータを読み込む 
+// ?????????????
 void load_matrix(Matrix *m, const char *filename) {
   FILE *f = fopen(filename, "rb");
   if (f == NULL) {
-    fprintf(stderr, "Error: ファイル %s を開けませんでした。\n", filename);
+    fprintf(stderr, "Error: ???? %s ????????????\n", filename);
     return;
   }
 
@@ -322,15 +318,15 @@ void load_matrix(Matrix *m, const char *filename) {
   fread(&rows, sizeof(int), 1, f);
   fread(&cols, sizeof(int), 1, f);
 
-  // 安全チェック: 読み込もうとしているファイルの行列サイズが、プログラム側の想定と一致しているか
+  // ???????
   if (rows != m->rows || cols != m->cols) {
-    fprintf(stderr, "Error: %s の行列サイズ [%dx%d] が、プログラムの想定 [%dx%d] 与えられた行列と不一致です。\n",
-            filename, rows, cols, m->rows, m->cols);
+    fprintf(stderr, "Error: ???? %s ????????????\n", filename);
+
     fclose(f);
     return;
   }
 
-  // データをメモリに読み込む
+  // ??????????????
   fread(m->data, sizeof(float), rows * cols, f);
 
   fclose(f);
