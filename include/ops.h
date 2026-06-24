@@ -26,6 +26,10 @@ void forward_embedding(
     Matrix *X
 );
 
+void bias_add(Matrix *M, const Matrix *bias);
+void compute_bias_gradient(const Matrix *dOut, Matrix *dBias);
+void copy_matrix(const Matrix *src, Matrix *dest);
+
 // 位置エンコーディング
 void apply_positional_encoding(Matrix *X);
 

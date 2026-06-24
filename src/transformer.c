@@ -250,10 +250,15 @@ void backward_transformer(
 
   // NUM_LAYERS から 0 に向かって、逆順に誤差を逆流させる
   for (int l = NUM_LAYERS - 1; l >= 0; l--) {
+    // 1. MLPの計算の前に、上流からの誤差を一度CPUにロード
+    download_matrix(&dX_stream);
+
     // 2. MLP ブロックの逆伝播
     // 残差接続の微分は、定数なので無視
     // メインストリームの誤差 dX_stream が、そのまま MLP への誤差 (dBlock_out) になる
     for (int i = 0; i < SEQ_LEN * EMBED_DIM; i++) dBlock_out.data[i] = dX_stream.data[i];
+
+    upload_matrix(&dBlock_out);
 
     // MLP 本体の逆伝播
     backward_mlp(
